@@ -5,8 +5,8 @@ from io import StringIO
 from src.scraper import start_extraction
 from src.uploader import start_upload
 
-st.set_page_config(page_title="DH ROBOT V25", page_icon="🦾", layout="wide")
-st.title("🤖 DH ROBOT - V25.0 (Galeria Mode)")
+st.set_page_config(page_title="DH ROBOT FINAL", page_icon="🦾", layout="wide")
+st.title("🤖 DH ROBOT - V26.0 (HQ Galeria)")
 
 os.makedirs("data", exist_ok=True)
 
@@ -43,7 +43,7 @@ if st.button("🚀 INICIAR EXTRAÇÃO", use_container_width=True):
 
 st.markdown("---")
 
-# --- 2. REVISÃO DE DADOS E IMAGENS ---
+# --- 2. REVISÃO DE DADOS E IMAGENS (AGORA FLUTUANTE!) ---
 st.subheader("🔍 2️⃣ Passo: Revisar Dados e Imagens")
 arquivos = list_json_files()
 
@@ -60,7 +60,7 @@ if arquivos:
             imagens.extend(glob.glob(os.path.join(pasta_do_produto, ext)))
             
         with st.expander(f"Revisar: {opcoes[selected_file]}", expanded=True):
-            aba1, aba2 = st.tabs(["📝 Dados (Texto)", f"🖼️ Imagens ({len(imagens)})"])
+            aba1, aba2 = st.tabs(["📝 Dados (Texto)", f"🖼️ Imagens HQ ({len(imagens)})"])
             
             with aba1:
                 try:
@@ -73,9 +73,21 @@ if arquivos:
                 if imagens:
                     cols = st.columns(2)
                     for i, img_path in enumerate(imagens):
-                        cols[i % 2].image(img_path, use_container_width=True, caption=os.path.basename(img_path))
+                        # --- TRUQUE DA IMAGEM FLUTUANTE QUE FECHA COM O 'VOLTAR' ---
+                        with cols[i % 2]:
+                            # 1. Mostra a imagem na galeria normalmente
+                            st.image(img_path, use_container_width=True, caption=os.path.basename(img_path))
+                            
+                            # 2. Cria um botão/link HTML escondido que abre a foto em tela cheia na MESMA página.
+                            # O target="_self" é o segredo para o botão "voltar" do telemóvel funcionar.
+                            st.markdown(f'''
+                                <a href="{img_path}" target="_self">
+                                    👁️ Ver em Ecrã Inteiro
+                                </a>
+                                ''', unsafe_allow_html=True)
+                            st.markdown("<br>", unsafe_allow_html=True)
                 else:
-                    st.info("Nenhuma imagem encontrada nesta pasta.")
+                    st.info("Nenhuma imagem encontrada nesta pasta. Tente extrair novamente com o novo motor.")
         
         # Botões de Apagar
         col1, col2 = st.columns(2)
