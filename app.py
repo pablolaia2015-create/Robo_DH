@@ -43,7 +43,7 @@ if st.button("🚀 INICIAR EXTRAÇÃO", use_container_width=True):
 
 st.markdown("---")
 
-# --- 2. REVISÃO (AGORA COM IMAGENS!) ---
+# --- 2. REVISÃO DE DADOS E IMAGENS ---
 st.subheader("🔍 2️⃣ Passo: Revisar Dados e Imagens")
 arquivos = list_json_files()
 
@@ -54,14 +54,12 @@ if arquivos:
     if selected_file:
         pasta_do_produto = os.path.dirname(selected_file)
         
-        # Procura as imagens dentro da pasta do produto
         extensoes = ("*.jpg", "*.jpeg", "*.png", "*.webp")
         imagens = []
         for ext in extensoes:
             imagens.extend(glob.glob(os.path.join(pasta_do_produto, ext)))
             
         with st.expander(f"Revisar: {opcoes[selected_file]}", expanded=True):
-            # Criação das duas Abas
             aba1, aba2 = st.tabs(["📝 Dados (Texto)", f"🖼️ Imagens ({len(imagens)})"])
             
             with aba1:
@@ -73,17 +71,23 @@ if arquivos:
                     
             with aba2:
                 if imagens:
-                    # Mostra as imagens em 2 colunas para ficar bonito no telemóvel
                     cols = st.columns(2)
                     for i, img_path in enumerate(imagens):
                         cols[i % 2].image(img_path, use_container_width=True, caption=os.path.basename(img_path))
                 else:
                     st.info("Nenhuma imagem encontrada nesta pasta.")
         
-        # Botão de apagar
-        if st.button("🗑️ Apagar este produto (Se tiver erros)", use_container_width=True):
-            shutil.rmtree(pasta_do_produto)
-            st.rerun()
+        # Botões de Apagar
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🗑️ Apagar apenas este produto", use_container_width=True):
+                shutil.rmtree(pasta_do_produto)
+                st.rerun()
+        with col2:
+            if st.button("💣 LIMPAR BANCADA INTEIRA", type="primary", use_container_width=True):
+                shutil.rmtree("data")
+                os.makedirs("data", exist_ok=True)
+                st.rerun()
 else:
     st.info("Nenhum arquivo encontrado para revisão.")
 
@@ -97,7 +101,7 @@ if st.button("🚀 UPLOAD FINAL PARA O ALVIM", type="primary", use_container_wid
             try:
                 start_upload()
                 st.success("✨ TUDO ENVIADO COM SUCESSO!")
-                st.balloons() # Balões da festa mantidos!
+                st.balloons()
             except Exception as e:
                 st.error(f"Erro no Upload: {e}")
     else:
