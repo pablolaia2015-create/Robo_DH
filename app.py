@@ -1,34 +1,23 @@
 import streamlit as st
-import os, glob, json, time
+import os, json, time, shutil
 import contextlib
 from io import StringIO
 from src.scraper import start_extraction
 from src.uploader import start_upload
 
-st.set_page_config(page_title="DH ROBOT FINAL", page_icon="🦾", layout="wide")
-st.title("🤖 DH ROBOT - V23.3 (Auto-Fix)")
+st.set_page_config(page_title="DH ROBOT V24", page_icon="🦾", layout="wide")
+st.title("🤖 DH ROBOT - V24.0 (Folder Fix)")
 
 os.makedirs("data", exist_ok=True)
 
-def list_files_and_fix():
-    # Pega TODOS os ficheiros na pasta data (mesmo os que não têm .json)
-    arquivos = glob.glob("data/*")
-    ficheiros_prontos = []
-    
-    for f in arquivos:
-        if os.path.isfile(f):
-            # Se o ficheiro não tiver .json, o robô conserta o nome sozinho!
-            if not f.endswith('.json') and not f.endswith('.csv'):
-                novo_nome = f + ".json"
-                try:
-                    os.rename(f, novo_nome)
-                    ficheiros_prontos.append(novo_nome)
-                except:
-                    ficheiros_prontos.append(f)
-            else:
-                ficheiros_prontos.append(f)
-                
-    return ficheiros_prontos
+def list_json_files():
+    # O robô agora "entra" em todas as subpastas para procurar os ficheiros de dados
+    arquivos = []
+    for root, dirs, files in os.walk("data"):
+        for file in files:
+            if file.endswith(".json"):
+                arquivos.append(os.path.join(root, file))
+    return arquivos
 
 # --- 1. EXTRAÇÃO ---
 st.subheader("1️⃣ Passo: Extrair")
@@ -36,7 +25,7 @@ url_input = st.text_input("Cole o link COMPLETO aqui:", placeholder="https://www
 
 if st.button("🚀 INICIAR EXTRAÇÃO", use_container_width=True):
     if "http" in url_input:
-        st.info("A extrair... Aguarde.")
+        st.info("A extrair e a criar as pastas... Aguarde.")
         log_capture = StringIO()
         with contextlib.redirect_stdout(log_capture), contextlib.redirect_stderr(log_capture):
             try:
@@ -44,14 +33,13 @@ if st.button("🚀 INICIAR EXTRAÇÃO", use_container_width=True):
             except Exception as e:
                 print(f"Erro: {e}")
         
-        # Só mostramos o log se der erro para não poluir o ecrã
-        arquivos_agora = list_files_and_fix()
+        arquivos_agora = list_json_files()
         if arquivos_agora:
-            st.success("✅ Extração perfeita! Ficheiro guardado e corrigido.")
-            time.sleep(1)
+            st.success("✅ Extração perfeita! Dados encontrados nas pastas.")
+            time.sleep(2)
             st.rerun()
         else:
-            st.error("❌ Erro. O robô não conseguiu criar o ficheiro.")
+            st.error("❌ O robô criou a pasta, mas não encontrou o ficheiro JSON lá dentro.")
             st.text_area("Log de Erro:", log_capture.getvalue(), height=150)
     else:
         st.error("Link inválido.")
@@ -60,22 +48,24 @@ st.markdown("---")
 
 # --- 2. REVISÃO ---
 st.subheader("🔍 2️⃣ Passo: Revisar Dados Extraídos")
-arquivos = list_files_and_fix()
+arquivos = list_json_files()
 
 if arquivos:
-    selected_file = st.selectbox("Escolha um ficheiro para revisar:", arquivos)
+    # Mostra o nome da pasta (produto) para ser mais fácil de ler
+    opcoes = {f: os.path.basename(os.path.dirname(f)) for f in arquivos}
+    selected_file = st.selectbox("Escolha um produto para revisar:", arquivos, format_func=lambda x: opcoes[x])
+    
     if selected_file:
-        with st.expander(f"Ver conteúdo de: {os.path.basename(selected_file)}", expanded=True):
+        with st.expander(f"Ver os adesivos de: {opcoes[selected_file]}", expanded=True):
             try:
                 with open(selected_file, 'r', encoding='utf-8') as f:
                     st.json(json.load(f))
             except Exception as e:
-                st.warning(f"Não é um JSON válido. Lendo como texto: {e}")
-                with open(selected_file, 'r', encoding='utf-8') as f:
-                    st.text(f.read())
+                st.warning(f"Erro a ler os dados: {e}")
         
-        if st.button("🗑️ Apagar este ficheiro (Se tiver erros)", use_container_width=True):
-            os.remove(selected_file)
+        if st.button("🗑️ Apagar este produto (Se tiver erros)", use_container_width=True):
+            pasta_do_produto = os.path.dirname(selected_file)
+            shutil.rmtree(pasta_do_produto) # Apaga a pasta inteira (fotos e json)
             st.rerun()
 else:
     st.info("Nenhum arquivo encontrado para revisão.")
@@ -86,7 +76,7 @@ st.markdown("---")
 st.subheader("📤 3️⃣ Passo: Enviar para o Site")
 if st.button("🚀 UPLOAD FINAL PARA O ALVIM", type="primary", use_container_width=True):
     if arquivos:
-        with st.spinner("Enviando..."):
+        with st.spinner("Enviando tudo para o servidor do Alvim..."):
             try:
                 start_upload()
                 st.success("✨ TUDO ENVIADO COM SUCESSO!")
