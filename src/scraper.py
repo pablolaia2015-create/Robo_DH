@@ -55,27 +55,37 @@ def start_extraction(url):
         with open(os.path.join(product_path, "data.json"), "w", encoding="utf-8") as f:
             json.dump(product_data, f, indent=4, ensure_ascii=False)
 
-        # --- 📸 MÁQUINA FOTOGRÁFICA (SEM LIMITE) ---
-        print("📸 A procurar imagens principais...")
+        # --- 📸 MÁQUINA FOTOGRÁFICA (NOVA LENTE INTELIGENTE) ---
+        print("📸 A procurar imagens...")
         img_urls = []
         
+        # 1. TRUQUE DE MESTRE: Apanhar a imagem principal do WhatsApp (OG Image)
+        og_image = soup.find('meta', property='og:image')
+        if og_image and og_image.get('content'):
+            img_urls.append(og_image['content'])
+            
+        # 2. Apanhar as outras fotos (com um filtro mais relaxado)
         for img in soup.find_all('img'):
             src = img.get('src') or img.get('data-src')
             if not src:
                 continue
                 
+            if src.startswith('//'):
+                src = 'https:' + src
+                
+            if not src.startswith('http'):
+                continue
+                
             src_lower = src.lower()
             
-            if 'media' in src_lower or 'kingfisher' in src_lower or 'product' in src_lower:
-                if any(lixo in src_lower for lixo in ['thumb', 'icon', 'logo', 'badge', '75x75', '140x140']):
-                    continue
+            # Só ignoramos o que for obviamente lixo (ícones, logos)
+            if any(lixo in src_lower for lixo in ['thumb', 'icon', 'logo', 'badge', 'svg', 'avatar']):
+                continue
                 
-                if src.startswith('//'):
-                    src = 'https:' + src
-                    
-                if src not in img_urls:
-                    img_urls.append(src)
+            if src not in img_urls:
+                img_urls.append(src)
 
+        # 3. Guardar as imagens na pasta
         img_count = 0
         for src in img_urls:
             try:
@@ -84,11 +94,10 @@ def start_extraction(url):
                 img_name = f"imagem_{img_count}.jpg"
                 with open(os.path.join(product_path, img_name), 'wb') as handler:
                     handler.write(img_data)
-                print(f"  -> Imagem {img_count} transferida.")
             except Exception as e:
-                print(f"  -> Erro ao transferir imagem: {e}")
+                print(f"  -> Erro na imagem: {e}")
 
-        print(f"✅ SUCCESS: Guardado o JSON e {img_count} imagens na pasta {folder_name}")
+        print(f"✅ SUCCESS: {img_count} imagens transferidas.")
 
     except Exception as e:
         print(f"❌ TECHNICAL ERROR: {e}")
@@ -96,4 +105,3 @@ def start_extraction(url):
 if __name__ == "__main__":
     link = input("Link: ")
     start_extraction(link)
-
