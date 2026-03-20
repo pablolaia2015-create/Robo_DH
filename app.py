@@ -1,73 +1,63 @@
 import streamlit as st
-import os
-import glob
-import time
+import os, glob, time
 from src.scraper import start_extraction
 from src.uploader import start_upload
 
-st.set_page_config(page_title="DH ROBOT V22.2", page_icon="🤖")
-st.title("🤖 DH ROBOT - V22.2 (Debug Mode)")
+st.set_page_config(page_title="DH ROBOT V23", page_icon="🦾")
+st.title("🤖 DH ROBOT - V23.0")
 
-# Garante que a pasta data existe
+# Cria a pasta data se não existir
 if not os.path.exists("data"):
     os.makedirs("data")
 
-def get_pending_files():
-    files = glob.glob("data/*.json") + glob.glob("data/*.csv")
-    return [os.path.basename(f) for f in files]
+# --- FUNÇÃO PARA LISTAR ARQUIVOS ---
+def list_files():
+    return glob.glob("data/*.json") + glob.glob("data/*.csv")
 
 # --- 1. SCRAPER ---
-st.subheader("1️⃣ STEP 1: Scrape")
-links_input = st.text_area("Paste FULL links here (https://...):", height=100)
+st.subheader("1️⃣ Passo: Extrair")
+url_input = st.text_input("Cole o link COMPLETO aqui:")
 
-if st.button("🚀 START EXTRACTION", use_container_width=True):
-    if links_input.strip():
-        raw_links = [l.strip() for l in links_input.split('\n') if l.strip()]
-        
-        for link in raw_links:
-            # Se o link for parcial, tentamos completar
-            full_url = link if "http" in link else f"https://www.diy.ie/departments/{link}"
-            
-            st.info(f"Trying: {full_url[:50]}...")
-            
+if st.button("🚀 INICIAR EXTRAÇÃO", use_container_width=True):
+    if "http" in url_input:
+        with st.spinner("Trabalhando..."):
             try:
-                # Rodar a extração
-                start_extraction(full_url)
-                st.success(f"✅ Extracted successfully!")
-                time.sleep(1) # Dá tempo para o arquivo ser gravado
+                start_extraction(url_input.strip())
+                st.success("✅ Extração concluída!")
+                time.sleep(2)
+                st.rerun()
             except Exception as e:
-                st.error(f"❌ FAILED! Error: {e}")
-        
-        # Botão para atualizar a lista manualmente após extração
-        if st.button("🔄 Refresh List"):
-            st.rerun()
+                st.error(f"Erro: {e}")
     else:
-        st.error("Please paste a link first!")
+        st.error("Por favor, cole o link começando com https://")
 
 st.markdown("---")
 
 # --- 2. MONITOR ---
-st.subheader("📦 Pending Files on Server")
-pending = get_pending_files()
-if pending:
-    st.warning(f"Found {len(pending)} files ready:")
-    for f in pending: st.write(f"📄 {f}")
+st.subheader("📦 Arquivos prontos para o Alvim")
+arquivos = list_files()
+
+if arquivos:
+    st.warning(f"Temos {len(arquivos)} arquivos na fila:")
+    for a in arquivos:
+        st.write(f"📄 {os.path.basename(a)}")
 else:
-    st.info("No files found. If you just extracted, wait 2 seconds and click Refresh.")
+    st.info("Nenhum arquivo encontrado na pasta 'data'.")
 
 st.markdown("---")
 
 # --- 3. UPLOAD ---
-st.subheader("2️⃣ STEP 2: Upload")
-if st.button("📤 UPLOAD EVERYTHING", type="primary", use_container_width=True):
-    if not pending:
-        st.error("Nothing to upload!")
-    else:
-        with st.spinner("Uploading..."):
+st.subheader("2️⃣ Passo: Enviar para o Site")
+if st.button("📤 ENVIAR AGORA", type="primary", use_container_width=True):
+    if arquivos:
+        with st.spinner("Enviando..."):
             try:
                 start_upload()
-                st.success("✨ UPLOAD COMPLETE!")
+                st.success("✨ TUDO ENVIADO COM SUCESSO!")
                 st.snow()
+                time.sleep(3)
+                st.rerun()
             except Exception as e:
-                st.error(f"Upload failed: {e}")
-
+                st.error(f"Erro no Upload: {e}")
+    else:
+        st.error("Nada para enviar!")
