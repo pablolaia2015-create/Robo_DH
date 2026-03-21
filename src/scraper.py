@@ -10,8 +10,17 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 HISTORY_FILE = os.path.join(BASE_DIR, "extracted_links_db.txt")
 
+def get_api_key():
+    try:
+        import streamlit as st
+        if "GOOGLE_API_KEY" in st.secrets:
+            return st.secrets["GOOGLE_API_KEY"]
+    except ImportError:
+        pass
+    return os.getenv("GOOGLE_API_KEY")
+
 def generate_optimized_content(original_title, original_description):
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = get_api_key()
     
     if not api_key:
         print("⚠️ ERRO CRÍTICO: Chave GOOGLE_API_KEY não foi encontrada pelo scraper!")
@@ -19,7 +28,8 @@ def generate_optimized_content(original_title, original_description):
 
     print("🤖 AI is rewriting product content for SEO...")
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # URL CORRIGIDA: Mudamos para o modelo gemini-pro que é 100% estavel
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
     
     prompt = f"""
     You are an expert e-commerce copywriter and SEO specialist. 
@@ -51,7 +61,6 @@ def generate_optimized_content(original_title, original_description):
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         
-        # Se a IA der erro (ex: chave invalida), isto vai avisar no terminal
         if response.status_code != 200:
             print(f"⚠️ FALHA NA IA (Erro {response.status_code}): {response.text}")
             return original_title, original_description
@@ -112,7 +121,6 @@ def start_extraction(url):
         desc_tag = soup.find('div', {'id': 'product-details'})
         description = desc_tag.text.strip()[:600] if desc_tag else "No description available."
 
-        # CHAMA A IA E MOSTRA O RESULTADO NO NOVO PAINEL
         rewritten_title, rewritten_description = generate_optimized_content(title_text, description)
 
         product_data = {
