@@ -16,7 +16,21 @@ def generate_optimized_content(original_title, original_description, original_pr
     api_key = get_api_key()
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     
-    prompt = f"Transform this into a product JSON for a DIY store: {original_title}. Desc: {original_description}. Price: {original_price}. Output JSON only."
+    prompt = f"""
+    You are a professional e-commerce specialist for 'Dubliner Handyman'.
+    Analyze this product:
+    Title: {original_title}
+    Description: {original_description}
+    Price: {original_price}
+    
+    RULES:
+    1. 'category': MUST be one of: "Internal Doors", "Front Doors", "Bathroom Doors", "Handles", "Hinges", "Locks", "Cleaning Supplies", "Painting Supplies".
+    2. 'description': Use ONLY HTML (<p>, <b>, <ul>, <li>). NO Markdown.
+    3. 'inventory': Extract the REAL dimensions (e.g. "(H)1946mm (W)750mm") and set qty to 1.
+    4. 'price': Return the price as a float (e.g. 145.00). Use the price provided: {original_price}.
+
+    Return ONLY a valid JSON object.
+    """
     
     try:
         res = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
@@ -24,34 +38,42 @@ def generate_optimized_content(original_title, original_description, original_pr
             ai_text = res.json()['candidates'][0]['content']['parts'][0]['text']
             return json.loads(ai_text.strip().removeprefix('```json').removesuffix('```').strip())
     except: pass
-    return {"name": original_title, "category": "General", "storeEntries": [{"storeName": "B&Q", "price": 0.0, "inventory": [{"size": "Standard", "qty": 1}]}]}
+    
+    # Fallback caso a IA falhe
+    return {
+        "name": original_title,
+        "description": f"<p>{original_description}</p>",
+        "category": "Internal Doors",
+        "serviceSlug": "internal-doors",
+        "color": "Standard",
+        "storeEntries": [{"storeName": "B&Q", "price": float(original_price) if original_price else 0.0, "inventory": [{"size": "Standard", "qty": 1}]}]
+    }
 
 def start_extraction(url):
-    # User-Agent mais 'humano' para tentar passar pelo bloqueio
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/00.1'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        raw_title = soup.find('h1').text.strip() if soup.find('h1') else "Unknown"
+        h1 = soup.find('h1')
+        raw_title = h1.text.strip() if h1 else ""
         
-        # 🛡️ ESCUDO: Se o site nos der a página de 'techies', paramos aqui!
-        if "techies" in raw_title.lower() or "sorry" in raw_title.lower():
-            print("❌ BLOQUEIO DETETADO: O site da B&Q bloqueou o robô. Tente novamente mais tarde.")
+        # Detetor de bloqueio
+        if "techies" in raw_title.lower() or not raw_title:
+            print("❌ BLOQUEIO: O site não entregou os dados. Tente novamente.")
             return
 
-        print(f"🔍 RAW TITLE: {raw_title}")
+        print(f"🔍 EXTRAINDO: {raw_title}")
         
         price_tag = soup.find('div', {'data-test-id': 'product-price'})
         raw_price = price_tag.text.replace('€', '').strip() if price_tag else "0.00"
         
         desc_tag = soup.find('div', {'id': 'product-details'})
-        raw_desc = desc_tag.text.strip()[:500] if desc_tag else "No desc."
+        raw_desc = desc_tag.text.strip()[:600] if desc_tag else ""
         
         product_data = generate_optimized_content(raw_title, raw_desc, raw_price)
         product_data["storeEntries"][0]["link"] = url
+        product_data["serviceSlug"] = product_data["category"].lower().replace(" ", "-")
 
         folder_name = "".join(x for x in product_data["name"] if x.isalnum() or x in " -_").strip()
         path = os.path.join(DATA_DIR, folder_name)
