@@ -6,7 +6,7 @@ from src.scraper import start_extraction
 from src.uploader import start_upload
 
 st.set_page_config(page_title="DH ROBOT FINAL", page_icon="🦾", layout="wide")
-st.title("🤖 DH ROBOT - V26.0 (HQ Galeria)")
+st.title("🤖 DH ROBOT - V26.1 (HD Fix)")
 
 os.makedirs("data", exist_ok=True)
 
@@ -18,13 +18,12 @@ def list_json_files():
                 arquivos.append(os.path.join(root, file))
     return arquivos
 
-# --- 1. EXTRAÇÃO ---
 st.subheader("1️⃣ Passo: Extrair")
 url_input = st.text_input("Cole o link COMPLETO aqui:", placeholder="https://www.diy.ie/...")
 
 if st.button("🚀 INICIAR EXTRAÇÃO", use_container_width=True):
     if "http" in url_input:
-        st.info("A extrair dados e a transferir imagens... Aguarde.")
+        st.info("A forçar download das fotos originais... Aguarde.")
         log_capture = StringIO()
         with contextlib.redirect_stdout(log_capture), contextlib.redirect_stderr(log_capture):
             try:
@@ -43,7 +42,6 @@ if st.button("🚀 INICIAR EXTRAÇÃO", use_container_width=True):
 
 st.markdown("---")
 
-# --- 2. REVISÃO DE DADOS E IMAGENS (AGORA FLUTUANTE!) ---
 st.subheader("🔍 2️⃣ Passo: Revisar Dados e Imagens")
 arquivos = list_json_files()
 
@@ -53,14 +51,12 @@ if arquivos:
     
     if selected_file:
         pasta_do_produto = os.path.dirname(selected_file)
-        
-        extensoes = ("*.jpg", "*.jpeg", "*.png", "*.webp")
         imagens = []
-        for ext in extensoes:
+        for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
             imagens.extend(glob.glob(os.path.join(pasta_do_produto, ext)))
             
         with st.expander(f"Revisar: {opcoes[selected_file]}", expanded=True):
-            aba1, aba2 = st.tabs(["📝 Dados (Texto)", f"🖼️ Imagens HQ ({len(imagens)})"])
+            aba1, aba2 = st.tabs(["📝 Dados (Texto)", f"🖼️ Imagens HD ({len(imagens)})"])
             
             with aba1:
                 try:
@@ -71,25 +67,14 @@ if arquivos:
                     
             with aba2:
                 if imagens:
+                    st.info("💡 DICA: Clica no ícone das setinhas ⤢ no canto superior direito da imagem para ver em ecrã inteiro!")
                     cols = st.columns(2)
                     for i, img_path in enumerate(imagens):
-                        # --- TRUQUE DA IMAGEM FLUTUANTE QUE FECHA COM O 'VOLTAR' ---
-                        with cols[i % 2]:
-                            # 1. Mostra a imagem na galeria normalmente
-                            st.image(img_path, use_container_width=True, caption=os.path.basename(img_path))
-                            
-                            # 2. Cria um botão/link HTML escondido que abre a foto em tela cheia na MESMA página.
-                            # O target="_self" é o segredo para o botão "voltar" do telemóvel funcionar.
-                            st.markdown(f'''
-                                <a href="{img_path}" target="_self">
-                                    👁️ Ver em Ecrã Inteiro
-                                </a>
-                                ''', unsafe_allow_html=True)
-                            st.markdown("<br>", unsafe_allow_html=True)
+                        # Imagem limpa e nativa. O botão de expandir já vem com ela!
+                        cols[i % 2].image(img_path, use_container_width=True, caption=f"Foto {i+1}")
                 else:
-                    st.info("Nenhuma imagem encontrada nesta pasta. Tente extrair novamente com o novo motor.")
+                    st.info("Nenhuma imagem encontrada nesta pasta.")
         
-        # Botões de Apagar
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🗑️ Apagar apenas este produto", use_container_width=True):
@@ -105,7 +90,6 @@ else:
 
 st.markdown("---")
 
-# --- 3. UPLOAD ---
 st.subheader("📤 3️⃣ Passo: Enviar para o Site")
 if st.button("🚀 UPLOAD FINAL PARA O ALVIM", type="primary", use_container_width=True):
     if arquivos:

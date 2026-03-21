@@ -3,7 +3,6 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
-# Configuração de pastas
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
@@ -55,57 +54,46 @@ def start_extraction(url):
         with open(os.path.join(product_path, "data.json"), "w", encoding="utf-8") as f:
             json.dump(product_data, f, indent=4, ensure_ascii=False)
 
-        # --- 📸 MÁQUINA FOTOGRÁFICA (FILTRAGEM AGRESSIVA DE QUALIDADE) ---
-        print("📸 A procurar imagens principais de alta qualidade...")
+        # --- 📸 MÁQUINA FOTOGRÁFICA (FORÇAR ALTA RESOLUÇÃO) ---
+        print("📸 A forçar o download das fotos originais (HD)...")
         img_urls = []
         
-        # 1. TRUQUE DE MESTRE: Apanhar a imagem principal do WhatsApp (OG Image) - É garantido ser alta res!
         og_image = soup.find('meta', property='og:image')
         if og_image and og_image.get('content'):
-            img_urls.append(og_image['content'])
+            img_urls.append(og_image['content'].split('?')[0]) # O segredo do corte!
             
-        # 2. Apanhar as outras fotos da galeria (com filtro agressivo de tamanho/lixo)
-        # O site da DIY.ie usa muitos tamanhos. Vamos bloquear todos os pequenos.
-        # Adicionei dimensões como 75x75, 100x100, 140x140, 200x200 etc.
-        black_list = ['thumb', 'thumbnail', 'icon', 'logo', 'badge', 'svg', 'avatar',
-                      '75x75', '100x100', '140x140', '150x150', '180x180',
-                      '200x200', '240x240', '300x300', '400x400', '480x480',
-                      '_small', '_sml', '_min']
+        black_list = ['thumb', 'icon', 'logo', 'badge', 'svg', 'avatar']
 
         for img in soup.find_all('img'):
             src = img.get('src') or img.get('data-src')
-            if not src:
-                continue
-                
-            if src.startswith('//'):
-                src = 'https:' + src
-                
-            if not src.startswith('http'):
-                continue
+            if not src: continue
+            if src.startswith('//'): src = 'https:' + src
+            if not src.startswith('http'): continue
                 
             src_lower = src.lower()
-            
-            # FILTRO AGRESSIVO: Se tiver qualquer uma das palavras/dimensões lixo, ignoramos na hora!
-            if any(lixo in src_lower for lixo in black_list):
-                continue
+            if any(lixo in src_lower for lixo in black_list): continue
                 
-            if src not in img_urls:
-                img_urls.append(src)
+            # O GRANDE TRUQUE: Cortar tudo o que está depois do "?" no link!
+            # Isto destrói a ordem de encolher a foto e traz o tamanho gigante real.
+            src_clean = src.split('?')[0]
+            
+            if src_clean not in img_urls:
+                img_urls.append(src_clean)
 
-        # 3. Guardar apenas as fotos grandes na pasta
         img_count = 0
         for src in img_urls:
             try:
                 img_data = requests.get(src, headers=headers, timeout=10).content
-                img_count += 1
-                img_name = f"imagem_{img_count}.jpg"
-                with open(os.path.join(product_path, img_name), 'wb') as handler:
-                    handler.write(img_data)
-                # print(f"  -> Imagem {img_count} transferida.")
+                # Filtra fotos que são demasiado pequenas em peso (menos de 5KB = lixo)
+                if len(img_data) > 5000:
+                    img_count += 1
+                    img_name = f"imagem_{img_count}.jpg"
+                    with open(os.path.join(product_path, img_name), 'wb') as handler:
+                        handler.write(img_data)
             except Exception as e:
                 print(f"  -> Erro na imagem: {e}")
 
-        print(f"✅ SUCCESS: Guardado o JSON e {img_count} imagens de alta qualidade na pasta {folder_name}")
+        print(f"✅ SUCCESS: Guardado o JSON e {img_count} imagens HD na pasta {folder_name}")
 
     except Exception as e:
         print(f"❌ TECHNICAL ERROR: {e}")
@@ -113,3 +101,4 @@ def start_extraction(url):
 if __name__ == "__main__":
     link = input("Link: ")
     start_extraction(link)
+
