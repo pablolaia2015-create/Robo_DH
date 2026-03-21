@@ -1,10 +1,9 @@
 import streamlit as st
-import os, json, time, shutil, glob
+import os, json, shutil, glob
 import contextlib
 from io import StringIO
 
 # --- MÁGICA DE SEGURANÇA ---
-# Pega a chave do cofre do Streamlit e injeta diretamente no sistema (ambiente)
 try:
     if "GOOGLE_API_KEY" in st.secrets:
         os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
@@ -48,7 +47,6 @@ if st.button("🚀 START BATCH EXTRACTION", use_container_width=True):
                         print(f"Error on {url}: {e}")
                 progress_bar.progress((index + 1) / len(url_list))
                 
-        # PAINEL DE DIAGNÓSTICO (NOVO)
         if log_capture.getvalue():
             with st.expander("🛠️ Ver Terminal do Robô (Logs)", expanded=True):
                 st.text(log_capture.getvalue())
@@ -109,4 +107,15 @@ else:
 st.markdown("---")
 st.subheader("📤 3️⃣ Step: Upload to Website")
 if st.button("🚀 FINAL UPLOAD TO ALVIM", type="primary", use_container_width=True):
-    st.info("Upload engine coming soon!")
+    st.info("Conectando ao servidor do Alvim... Por favor, aguarde.")
+    log_capture = StringIO()
+    
+    with contextlib.redirect_stdout(log_capture), contextlib.redirect_stderr(log_capture):
+        start_upload()
+        
+    # Mostra o resultado do envio na tela!
+    st.text(log_capture.getvalue())
+    
+    if "✅ SUCESSO" in log_capture.getvalue():
+        st.success("🎉 Produto(s) enviado(s) para o banco de dados do Alvim com sucesso!")
+        st.balloons()
