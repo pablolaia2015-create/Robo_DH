@@ -1,4 +1,4 @@
 .env
 data/
 logs/
-__pycache__/
+__pycache__/extracted_links_db.txt
