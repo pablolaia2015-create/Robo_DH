@@ -176,3 +176,4 @@ def start_extraction(url):
 
     except Exception as e:
         print(f"❌ EXTRACTION ERROR: {e}")
+
