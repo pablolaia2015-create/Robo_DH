@@ -2,3 +2,4 @@ requests
 beautifulsoup4
 python-dotenv
 streamlit
+cloudscraper==1.2.71
