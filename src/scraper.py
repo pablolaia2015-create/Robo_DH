@@ -19,65 +19,94 @@ def get_api_key():
         pass
     return os.getenv("GOOGLE_API_KEY")
 
-def generate_optimized_content(original_title, original_description):
+def generate_optimized_content(original_title, original_description, original_price):
     api_key = get_api_key()
     
-    if not api_key:
-        print("⚠️ ERRO CRÍTICO: Chave GOOGLE_API_KEY não foi encontrada pelo scraper!")
-        return original_title, original_description
-
-    print("🤖 AI is rewriting product content for SEO...")
+    # Plano B de emergência caso a IA falhe (Formato Exato do Alvim)
+    fallback_data = {
+        "name": original_title,
+        "description": f"<p>{original_description}</p>",
+        "category": "Uncategorized",
+        "serviceSlug": "uncategorized",
+        "color": "Standard",
+        "storeEntries": [{
+            "storeName": "B&Q",
+            "price": float(original_price) if original_price else 0.0,
+            "inventory": [{"size": "Standard", "qty": 1}]
+        }]
+    }
     
-    # URL ATUALIZADA: A Google descontinuou o 1.5, agora usamos o motor mais recente (2.5-flash)
+    if not api_key:
+        print("⚠️ ERRO CRÍTICO: Chave GOOGLE_API_KEY não foi encontrada!")
+        return fallback_data
+
+    print("🤖 AI is rewriting and structuring data for Alvim's database...")
+    
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
     
     prompt = f"""
-    You are an expert e-commerce copywriter and SEO specialist. 
-    Take this original product name and description, and rewrite them 
-    to be 100% unique, engaging, and grammatically perfect in English. 
+    You are an expert e-commerce data extractor and copywriter for a DIY store.
+    Read this raw product title, description, and price:
+    Title: {original_title}
+    Description: {original_description}
+    Price: {original_price}
     
-    Guidelines:
-    1. Create an optimized title that includes relevant keywords for search engines.
-    2. Rewrite the description to highlight benefits, using bullet points for features. 
-       CRITICAL: If the Original Description says 'No description available.', invent a highly professional description based solely on the title.
-    3. Respond ONLY with a valid JSON object.
-    
-    Format example:
+    Create an optimized product listing following these EXACT rules:
+    1. 'name': SEO-optimized, clean product name.
+    2. 'description': Engaging description highlighting benefits. IMPORTANT: Format using ONLY standard HTML tags (<p>, <b>, <ul>, <li>, <br>). DO NOT use Markdown asterisks (**).
+    3. 'category': MUST be exactly one of these: "Internal Doors", "Front Doors", "Bathroom Doors", "Handles", "Hinges", "Locks", "Cleaning Supplies", "Painting Supplies". Pick the most logical one.
+    4. 'serviceSlug': URL-friendly version of the category (e.g., "internal-doors", "handles").
+    5. 'color': Extract or infer the main color/finish (e.g., "Natural Pine", "Chrome"). If unknown, use "Standard".
+    6. 'storeEntries': An array with one object containing:
+       - 'storeName': "B&Q"
+       - 'price': The numerical price as a float (e.g., 145.00)
+       - 'inventory': An array with one object containing 'size' (extract physical dimensions like "(h)1981mm (w)762mm") and 'qty' (always 1).
+
+    Respond ONLY with a valid JSON object matching this exact structure:
     {{
-      "rewritten_title": "New Optimized Title Here",
-      "rewritten_description": "New engaging description here..."
+      "name": "...",
+      "description": "...",
+      "category": "...",
+      "serviceSlug": "...",
+      "color": "...",
+      "storeEntries": [
+        {{
+          "storeName": "B&Q",
+          "price": 0.00,
+          "inventory": [
+            {{
+              "size": "...",
+              "qty": 1
+            }}
+          ]
+        }}
+      ]
     }}
-    
-    Original Title: {original_title}
-    Original Description: {original_description}
     """
     
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
     headers = {'Content-Type': 'application/json'}
     
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         
         if response.status_code != 200:
-            print(f"⚠️ FALHA NA IA (Erro {response.status_code}): {response.text}")
-            return original_title, original_description
+            print(f"⚠️ FALHA NA IA: {response.text}")
+            return fallback_data
             
         data = response.json()
         if 'candidates' in data and len(data['candidates']) > 0:
             ai_text = data['candidates'][0]['content']['parts'][0]['text']
             ai_text = ai_text.strip().removeprefix('```json').removesuffix('```').strip()
             optimized_content = json.loads(ai_text)
-            print("✅ IA reescreveu os textos com sucesso!")
-            return optimized_content['rewritten_title'], optimized_content['rewritten_description']
+            print("✅ IA gerou o JSON no formato do Alvim perfeitamente!")
+            return optimized_content
         else:
-            print("⚠️ A IA não devolveu candidatos válidos.")
-            return original_title, original_description
+            return fallback_data
             
     except Exception as e:
-        print(f"⚠️ ERRO DE CÓDIGO NA IA: {str(e)}")
-        return original_title, original_description
+        print(f"⚠️ ERRO NA IA: {str(e)}")
+        return fallback_data
 
 def is_link_extracted(url):
     if not os.path.exists(HISTORY_FILE):
@@ -115,26 +144,21 @@ def start_extraction(url):
             return
 
         price_tag = soup.find('div', {'data-test-id': 'product-price'})
-        price = price_tag.text.replace('€', '').strip() if price_tag else "0.00"
+        raw_price = price_tag.text.replace('€', '').strip() if price_tag else "0.00"
 
         desc_tag = soup.find('div', {'id': 'product-details'})
         description = desc_tag.text.strip()[:600] if desc_tag else "No description available."
 
-        rewritten_title, rewritten_description = generate_optimized_content(title_text, description)
+        # MAGIA DA IA ACONTECE AQUI (Enviamos também o preço cru para ela tratar)
+        product_data = generate_optimized_content(title_text, description, raw_price)
+        
+        # O Robô injeta a URL no JSON gerado pela IA
+        try:
+            product_data["storeEntries"][0]["link"] = url
+        except KeyError:
+            pass
 
-        product_data = {
-            "name": rewritten_title,
-            "category": "Hardware",
-            "finish": "Standard",
-            "description": rewritten_description,
-            "store": "B&Q",
-            "price": price,
-            "url": url,
-            "size": "N/A",
-            "quantity": 1
-        }
-
-        folder_name = "".join(x for x in rewritten_title if x.isalnum() or x in " -_").strip()
+        folder_name = "".join(x for x in product_data.get("name", title_text) if x.isalnum() or x in " -_").strip()
         product_path = os.path.join(DATA_DIR, folder_name)
         os.makedirs(product_path, exist_ok=True)
 
