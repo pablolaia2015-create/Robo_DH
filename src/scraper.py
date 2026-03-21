@@ -15,49 +15,76 @@ def get_api_key():
 
 def generate_optimized_content(original_title, original_description, original_price):
     api_key = get_api_key()
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
+    # Usando o modelo estável 1.5-flash que já deu sinal verde antes
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     
-    # Prompt mais rígido para evitar inventar portas onde há dobradiças
     prompt = f"""
-    Analyze this raw e-commerce data carefully:
-    Title: {original_title}
+    Analyze this product: {original_title}
     Description: {original_description}
     Price: {original_price}
     
-    TASK:
-    1. Determine if this is a DOOR or an ACCESSORY (Hinge, Handle, Lock).
-    2. 'category': Must be one of: "Internal Doors", "Front Doors", "Bathroom Doors", "Handles", "Hinges", "Locks", "Cleaning Supplies", "Painting Supplies".
-    3. 'name': Create a professional title. DO NOT call it a "Door" if the title says "Hinge" or "Handle".
-    4. 'description': Use ONLY HTML tags (<p>, <b>, <ul>, <li>). Focus ONLY on the actual product features.
-    5. 'inventory': Extract the REAL dimensions of the item (e.g. 100mm, 75mm). DO NOT use door sizes (1981x762) for accessories.
-
-    Return ONLY a valid JSON object.
+    Task: Return a JSON object for a professional store. 
+    Category must be one of: "Internal Doors", "Front Doors", "Bathroom Doors", "Handles", "Hinges", "Locks", "Cleaning Supplies", "Painting Supplies".
+    Format the description in HTML only.
+    
+    Required JSON Structure:
+    {{
+      "name": "...",
+      "description": "...",
+      "category": "...",
+      "serviceSlug": "...",
+      "color": "...",
+      "storeEntries": [{{ "storeName": "B&Q", "price": {original_price if original_price else 0.0}, "inventory": [{{ "size": "Standard", "qty": 1 }}] }}]
+    }}
     """
     
+    # Template de segurança (Caso a IA erre, usamos este)
+    safe_data = {
+        "name": original_title,
+        "description": f"<p>{original_description}</p>",
+        "category": "Hinges" if "hinge" in original_title.lower() else "Internal Doors",
+        "serviceSlug": "hinges" if "hinge" in original_title.lower() else "internal-doors",
+        "color": "Standard",
+        "storeEntries": [{"storeName": "B&Q", "price": float(original_price) if original_price else 0.0, "inventory": [{"size": "Standard", "qty": 1}]}]
+    }
+
     try:
         res = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
         if res.status_code == 200:
             ai_text = res.json()['candidates'][0]['content']['parts'][0]['text']
-            return json.loads(ai_text.strip().removeprefix('```json').removesuffix('```').strip())
-    except: pass
-    return {"name": original_title, "category": "Uncategorized", "storeEntries": [{"storeName": "B&Q", "price": original_price, "inventory": [{"size": "N/A", "qty": 1}]}]}
+            ai_text = ai_text.strip().removeprefix('```json').removesuffix('```').strip()
+            ai_json = json.loads(ai_text)
+            
+            # MESCLAGEM DE SEGURANÇA: Garante que as chaves do Alvim existem sempre
+            for key in safe_data:
+                if key not in ai_json:
+                    ai_json[key] = safe_data[key]
+            return ai_json
+    except Exception as e:
+        print(f"⚠️ Erro na IA, usando fallback: {e}")
+    
+    return safe_data
 
 def start_extraction(url):
-    # Verificação de histórico desativada temporariamente para permitir RE-EXTRAÇÃO durante testes
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         res = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # LOG DE DIAGNÓSTICO: Mostra o que o robô realmente "leu" no terminal
-        raw_title = soup.find('h1').text.strip() if soup.find('h1') else "Unknown"
-        print(f"🔍 RAW TITLE FOUND: {raw_title}")
+        raw_title = soup.find('h1').text.strip() if soup.find('h1') else "Unknown Product"
+        print(f"🔍 RAW TITLE: {raw_title}")
         
-        raw_price = soup.find('div', {'data-test-id': 'product-price'}).text.replace('€', '').strip() if soup.find('div', {'data-test-id': 'product-price'}) else "0.00"
-        raw_desc = soup.find('div', {'id': 'product-details'}).text.strip()[:500] if soup.find('div', {'id': 'product-details'}) else "No description found (Blocked?)"
+        price_tag = soup.find('div', {'data-test-id': 'product-price'})
+        raw_price = price_tag.text.replace('€', '').strip() if price_tag else "0.00"
+        
+        desc_tag = soup.find('div', {'id': 'product-details'})
+        raw_desc = desc_tag.text.strip()[:500] if desc_tag else "No desc available."
         
         product_data = generate_optimized_content(raw_title, raw_desc, raw_price)
-        product_data["storeEntries"][0]["link"] = url
+        
+        # Inserção segura do link
+        if "storeEntries" in product_data and len(product_data["storeEntries"]) > 0:
+            product_data["storeEntries"][0]["link"] = url
 
         folder_name = "".join(x for x in product_data["name"] if x.isalnum() or x in " -_").strip()
         path = os.path.join(DATA_DIR, folder_name)
@@ -66,11 +93,12 @@ def start_extraction(url):
         with open(os.path.join(path, "data.json"), "w", encoding="utf-8") as f:
             json.dump(product_data, f, indent=4, ensure_ascii=False)
 
-        # Download de imagens melhorado
+        # Download da imagem principal
         og_image = soup.find('meta', property='og:image')
         if og_image:
             img_data = requests.get(og_image['content'].split('?')[0], timeout=10).content
-            with open(os.path.join(path, "main_image.jpg"), 'wb') as h: h.write(img_data)
+            with open(os.path.join(path, "image_1.jpg"), 'wb') as h: h.write(img_data)
             
-        print(f"✅ FINALIZED: {product_data['name']} categorized as {product_data['category']}")
-    except Exception as e: print(f"❌ ERROR: {e}")
+        print(f"✅ SUCESSO: {product_data['name']}")
+    except Exception as e:
+        print(f"❌ ERRO GERAL: {e}")
