@@ -20,12 +20,7 @@ def get_secrets():
 
 def start_upload():
     api_url, api_key = get_secrets()
-    
-    if not api_url or not api_key:
-        print("⚠️ ERRO: Chaves de API não encontradas!")
-        return
-
-    if not os.path.exists(DATA_DIR): return
+    if not api_url or not api_key: return
 
     products = [p for p in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, p))]
 
@@ -37,36 +32,34 @@ def start_upload():
         with open(json_file, "r", encoding="utf-8") as f:
             product_data = json.load(f)
 
-        print(f"📤 Enviando para o Alvim: {product_data.get('name')}")
+        # O Alvim usa formData.get("payload") no código dele
+        payload = {"payload": json.dumps(product_data)}
 
-        # O Alvim espera 'payload' e não 'product_data'
-        payload = {
-            "payload": json.dumps(product_data) 
+        # TÉCNICA CHAVE-MESTRA: Envia a senha em 3 formatos comuns
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "x-api-key": api_key,
+            "admin-api-secret": api_key
         }
-
-        # Formato padrão de autorização que ele confirmou
-        headers = {"Authorization": f"Bearer {api_key}"}
 
         image_paths = glob.glob(os.path.join(path, "*.jpg"))
         files = []
         for img_path in image_paths:
-            # O Alvim espera o nome do campo como 'photos'
+            # O Alvim usa formData.getAll("photos")
             files.append(('photos', (os.path.basename(img_path), open(img_path, 'rb'), 'image/jpeg')))
 
         try:
-            # Envio como multipart/form-data
+            print(f"📤 Tentando upload para: {api_url}")
             res = requests.post(api_url, data=payload, files=files, headers=headers, timeout=60)
 
             if res.status_code in [200, 201]:
-                print(f"✅ SUCESSO! Produto integrado no site.")
+                print(f"✅ SUCESSO ABSOLUTO!")
             else:
-                print(f"⚠️ ERRO {res.status_code}: {res.text}")
-                
+                print(f"⚠️ FALHA {res.status_code}: {res.text}")
         except Exception as e:
-            print(f"❌ Erro de Conexão: {e}")
+            print(f"❌ Erro: {e}")
         finally:
-            for _, file_tuple in files:
-                file_tuple[1].close()
+            for _, f_tuple in files: f_tuple[1].close()
 
 if __name__ == "__main__":
     start_upload()
