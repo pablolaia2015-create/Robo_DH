@@ -5,9 +5,27 @@ from bs4 import BeautifulSoup
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
+HISTORY_FILE = os.path.join(BASE_DIR, "extracted_links_db.txt")
+
+def is_link_extracted(url):
+    """Verifica se o link ja existe no banco de dados."""
+    if not os.path.exists(HISTORY_FILE):
+        return False
+    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        links = f.read().splitlines()
+    return url in links
+
+def save_extracted_link(url):
+    """Guarda o link no banco de dados apos sucesso."""
+    with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+        f.write(url + "\n")
 
 def start_extraction(url):
     print(f"\n🔍 SCRAPING TARGET: {url}")
+
+    if is_link_extracted(url):
+        print("⚠️ WARNING: This link was already extracted. Skipping...")
+        return
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -54,14 +72,13 @@ def start_extraction(url):
         with open(os.path.join(product_path, "data.json"), "w", encoding="utf-8") as f:
             json.dump(product_data, f, indent=4, ensure_ascii=False)
 
-        # --- 📸 MÁQUINA FOTOGRÁFICA (FORÇAR ALTA RESOLUÇÃO) ---
-        print("📸 A forçar o download das fotos originais (HD)...")
+        print("📸 Forcing original HD photos download...")
         img_urls = []
-        
+
         og_image = soup.find('meta', property='og:image')
         if og_image and og_image.get('content'):
-            img_urls.append(og_image['content'].split('?')[0]) # O segredo do corte!
-            
+            img_urls.append(og_image['content'].split('?')[0])
+
         black_list = ['thumb', 'icon', 'logo', 'badge', 'svg', 'avatar']
 
         for img in soup.find_all('img'):
@@ -69,14 +86,12 @@ def start_extraction(url):
             if not src: continue
             if src.startswith('//'): src = 'https:' + src
             if not src.startswith('http'): continue
-                
+
             src_lower = src.lower()
             if any(lixo in src_lower for lixo in black_list): continue
-                
-            # O GRANDE TRUQUE: Cortar tudo o que está depois do "?" no link!
-            # Isto destrói a ordem de encolher a foto e traz o tamanho gigante real.
+
             src_clean = src.split('?')[0]
-            
+
             if src_clean not in img_urls:
                 img_urls.append(src_clean)
 
@@ -84,16 +99,16 @@ def start_extraction(url):
         for src in img_urls:
             try:
                 img_data = requests.get(src, headers=headers, timeout=10).content
-                # Filtra fotos que são demasiado pequenas em peso (menos de 5KB = lixo)
                 if len(img_data) > 5000:
                     img_count += 1
-                    img_name = f"imagem_{img_count}.jpg"
+                    img_name = f"image_{img_count}.jpg"
                     with open(os.path.join(product_path, img_name), 'wb') as handler:
                         handler.write(img_data)
             except Exception as e:
-                print(f"  -> Erro na imagem: {e}")
+                print(f"  -> Image Error: {e}")
 
-        print(f"✅ SUCCESS: Guardado o JSON e {img_count} imagens HD na pasta {folder_name}")
+        save_extracted_link(url)
+        print(f"✅ SUCCESS: Saved JSON and {img_count} HD images in folder {folder_name}")
 
     except Exception as e:
         print(f"❌ TECHNICAL ERROR: {e}")
@@ -101,4 +116,3 @@ def start_extraction(url):
 if __name__ == "__main__":
     link = input("Link: ")
     start_extraction(link)
-
