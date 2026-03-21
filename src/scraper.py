@@ -4,28 +4,36 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-# Carrega as chaves secretas do ficheiro .env
+# Carrega as chaves secretas do ficheiro .env (para o Termux)
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 HISTORY_FILE = os.path.join(BASE_DIR, "extracted_links_db.txt")
 
-# Pega a chave do ficheiro secreto
-api_key = os.getenv("GOOGLE_API_KEY")
+def get_api_key():
+    """Busca a chave de forma inteligente: no Streamlit Cloud ou no Termux"""
+    # Tenta pegar do cofre do Streamlit primeiro
+    try:
+        import streamlit as st
+        if "GOOGLE_API_KEY" in st.secrets:
+            return st.secrets["GOOGLE_API_KEY"]
+    except ImportError:
+        pass
+    
+    # Se falhar, pega do Termux local
+    return os.getenv("GOOGLE_API_KEY")
 
 def generate_optimized_content(original_title, original_description):
-    """
-    Usa o Gemini AI (via REST API super leve) para reescrever o titulo 
-    e descricao para SEO unico e gramatica perfeita em Ingles.
-    """
+    """Reescreve os textos com IA, mesmo se a descricao original estiver vazia."""
+    api_key = get_api_key()
+    
     if not api_key:
         print("⚠️ GOOGLE_API_KEY not found. Skipping AI rewrite.")
         return original_title, original_description
 
     print("🤖 AI is rewriting product content for SEO...")
     
-    # URL direta da API do Google (nao precisa de bibliotecas pesadas)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     
     prompt = f"""
@@ -35,7 +43,8 @@ def generate_optimized_content(original_title, original_description):
     
     Guidelines:
     1. Create an optimized title that includes relevant keywords for search engines.
-    2. Rewrite the description to highlight benefits, using bullet points for features.
+    2. Rewrite the description to highlight benefits, using bullet points for features. 
+       CRITICAL: If the Original Description says 'No description available.', you MUST invent a highly professional, realistic description based solely on the product title.
     3. Ensure the tone is professional and appealing to buyers.
     4. Respond ONLY with a valid JSON object.
     
@@ -49,7 +58,6 @@ def generate_optimized_content(original_title, original_description):
     Original Description: {original_description}
     """
     
-    # Prepara o pacote de dados para enviar ao Google
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json"}
@@ -57,26 +65,20 @@ def generate_optimized_content(original_title, original_description):
     headers = {'Content-Type': 'application/json'}
     
     try:
-        # Envia a mensagem para o cerebro da IA
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
         
-        # Desempacota a resposta
         data = response.json()
-        
-        # Verifica se o Google enviou o texto corretamente
         if 'candidates' in data and len(data['candidates']) > 0:
             ai_text = data['candidates'][0]['content']['parts'][0]['text']
-            # Limpa formatacao extra do markdown caso o Google envie ```json
             ai_text = ai_text.strip().removeprefix('```json').removesuffix('```').strip()
             optimized_content = json.loads(ai_text)
             return optimized_content['rewritten_title'], optimized_content['rewritten_description']
         else:
-            print("⚠️ Unexpected response from AI. Using original content.")
             return original_title, original_description
             
     except Exception as e:
-        print(f"⚠️ AI Rewrite failed: {e}. Using original content.")
+        print(f"⚠️ AI Rewrite failed: {e}")
         return original_title, original_description
 
 # --------------------------------------------------------
@@ -103,7 +105,7 @@ def start_extraction(url):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-IE,en-GB,en;q=0.9,pt-PT;q=0.8',
-        'Referer': '[https://www.diy.ie/](https://www.diy.ie/)',
+        'Referer': 'https://www.diy.ie/',
         'DNT': '1'
     }
 
@@ -124,7 +126,7 @@ def start_extraction(url):
         desc_tag = soup.find('div', {'id': 'product-details'})
         description = desc_tag.text.strip()[:600] if desc_tag else "No description available."
 
-        # A NOVA PARTE INTELIGENTE
+        # MAGIA DA IA ACONTECE AQUI
         rewritten_title, rewritten_description = generate_optimized_content(title_text, description)
 
         product_data = {
