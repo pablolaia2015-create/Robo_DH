@@ -28,7 +28,6 @@ def generate_optimized_content(original_title, original_description):
 
     print("🤖 AI is rewriting product content for SEO...")
     
-    # URL DEFINITIVA E OFICIAL DA GOOGLE (v1 e gemini-1.5-flash)
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     
     prompt = f"""
@@ -52,9 +51,9 @@ def generate_optimized_content(original_title, original_description):
     Original Description: {original_description}
     """
     
+    # PACOTE LIMPO: Removida a configuração que a v1 não aceitava
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json"}
+        "contents": [{"parts": [{"text": prompt}]}]
     }
     headers = {'Content-Type': 'application/json'}
     
