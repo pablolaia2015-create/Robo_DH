@@ -2,11 +2,21 @@ import streamlit as st
 import os, json, time, shutil, glob
 import contextlib
 from io import StringIO
+
+# --- MÁGICA DE SEGURANÇA ---
+# Pega a chave do cofre do Streamlit e injeta diretamente no sistema (ambiente)
+try:
+    if "GOOGLE_API_KEY" in st.secrets:
+        os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+except Exception:
+    pass
+# ---------------------------
+
 from src.scraper import start_extraction
 from src.uploader import start_upload
 
 st.set_page_config(page_title="DH ROBOT FINAL", page_icon="🦾", layout="wide")
-st.title("🤖 DH ROBOT - V26.2 (Batch HD Extraction)")
+st.title("🤖 DH ROBOT - V26.3 (AI Diagnostic Mode)")
 
 os.makedirs("data", exist_ok=True)
 
@@ -19,17 +29,14 @@ def list_json_files():
     return files
 
 st.subheader("1️⃣ Step: Extract (Batch Mode)")
-urls_input = st.text_area("Paste ALL FULL links here (one per line):", placeholder="https://www.diy.ie/...\nhttps://www.diy.ie/...", height=150)
+urls_input = st.text_area("Paste ALL FULL links here (one per line):", placeholder="https://www.diy.ie/...", height=150)
 
 if st.button("🚀 START BATCH EXTRACTION", use_container_width=True):
-    # Separa os links por linha e remove espaços em branco
     url_list = [url.strip() for url in urls_input.split('\n') if url.strip()]
     
     if url_list:
         st.info(f"Processing {len(url_list)} links... Please wait.")
         log_capture = StringIO()
-        
-        # Inicia a barra de progresso do Streamlit
         progress_bar = st.progress(0)
         
         with contextlib.redirect_stdout(log_capture), contextlib.redirect_stderr(log_capture):
@@ -39,14 +46,15 @@ if st.button("🚀 START BATCH EXTRACTION", use_container_width=True):
                         start_extraction(url)
                     except Exception as e:
                         print(f"Error on {url}: {e}")
-                
-                # Atualiza a barra de progresso
                 progress_bar.progress((index + 1) / len(url_list))
+                
+        # PAINEL DE DIAGNÓSTICO (NOVO)
+        if log_capture.getvalue():
+            with st.expander("🛠️ Ver Terminal do Robô (Logs)", expanded=True):
+                st.text(log_capture.getvalue())
                 
         if list_json_files():
             st.success("✅ Batch Extraction Completed!")
-            time.sleep(2)
-            st.rerun()
         else:
             st.error("❌ An error occurred or no new data was extracted.")
     else:
@@ -79,7 +87,6 @@ if extracted_files:
 
             with tab2:
                 if images:
-                    st.info("💡 TIP: Click the expand icon ⤢ in the top right corner of the image to view fullscreen!")
                     cols = st.columns(2)
                     for i, img_path in enumerate(images):
                         cols[i % 2].image(img_path, use_container_width=True, caption=f"Image {i+1}")
@@ -100,16 +107,6 @@ else:
     st.info("No files found for review.")
 
 st.markdown("---")
-
 st.subheader("📤 3️⃣ Step: Upload to Website")
 if st.button("🚀 FINAL UPLOAD TO ALVIM", type="primary", use_container_width=True):
-    if extracted_files:
-        with st.spinner("Sending everything to the server..."):
-            try:
-                start_upload()
-                st.success("✨ EVERYTHING UPLOADED SUCCESSFULLY!")
-                st.balloons()
-            except Exception as e:
-                st.error(f"Upload Error: {e}")
-    else:
-        st.error("Nothing to upload!")
+    st.info("Upload engine coming soon!")

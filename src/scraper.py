@@ -4,32 +4,17 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-# Carrega as chaves secretas do ficheiro .env (para o Termux)
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 HISTORY_FILE = os.path.join(BASE_DIR, "extracted_links_db.txt")
 
-def get_api_key():
-    """Busca a chave de forma inteligente: no Streamlit Cloud ou no Termux"""
-    # Tenta pegar do cofre do Streamlit primeiro
-    try:
-        import streamlit as st
-        if "GOOGLE_API_KEY" in st.secrets:
-            return st.secrets["GOOGLE_API_KEY"]
-    except ImportError:
-        pass
-    
-    # Se falhar, pega do Termux local
-    return os.getenv("GOOGLE_API_KEY")
-
 def generate_optimized_content(original_title, original_description):
-    """Reescreve os textos com IA, mesmo se a descricao original estiver vazia."""
-    api_key = get_api_key()
+    api_key = os.getenv("GOOGLE_API_KEY")
     
     if not api_key:
-        print("⚠️ GOOGLE_API_KEY not found. Skipping AI rewrite.")
+        print("⚠️ ERRO CRÍTICO: Chave GOOGLE_API_KEY não foi encontrada pelo scraper!")
         return original_title, original_description
 
     print("🤖 AI is rewriting product content for SEO...")
@@ -44,9 +29,8 @@ def generate_optimized_content(original_title, original_description):
     Guidelines:
     1. Create an optimized title that includes relevant keywords for search engines.
     2. Rewrite the description to highlight benefits, using bullet points for features. 
-       CRITICAL: If the Original Description says 'No description available.', you MUST invent a highly professional, realistic description based solely on the product title.
-    3. Ensure the tone is professional and appealing to buyers.
-    4. Respond ONLY with a valid JSON object.
+       CRITICAL: If the Original Description says 'No description available.', invent a highly professional description based solely on the title.
+    3. Respond ONLY with a valid JSON object.
     
     Format example:
     {{
@@ -66,22 +50,26 @@ def generate_optimized_content(original_title, original_description):
     
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
         
+        # Se a IA der erro (ex: chave invalida), isto vai avisar no terminal
+        if response.status_code != 200:
+            print(f"⚠️ FALHA NA IA (Erro {response.status_code}): {response.text}")
+            return original_title, original_description
+            
         data = response.json()
         if 'candidates' in data and len(data['candidates']) > 0:
             ai_text = data['candidates'][0]['content']['parts'][0]['text']
             ai_text = ai_text.strip().removeprefix('```json').removesuffix('```').strip()
             optimized_content = json.loads(ai_text)
+            print("✅ IA reescreveu os textos com sucesso!")
             return optimized_content['rewritten_title'], optimized_content['rewritten_description']
         else:
+            print("⚠️ A IA não devolveu candidatos válidos.")
             return original_title, original_description
             
     except Exception as e:
-        print(f"⚠️ AI Rewrite failed: {e}")
+        print(f"⚠️ ERRO DE CÓDIGO NA IA: {str(e)}")
         return original_title, original_description
-
-# --------------------------------------------------------
 
 def is_link_extracted(url):
     if not os.path.exists(HISTORY_FILE):
@@ -96,17 +84,15 @@ def save_extracted_link(url):
 
 def start_extraction(url):
     print(f"\n🔍 SCRAPING TARGET: {url}")
-
     if is_link_extracted(url):
         print("⚠️ WARNING: This link was already extracted. Skipping...")
         return
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-IE,en-GB,en;q=0.9,pt-PT;q=0.8',
+        'Accept-Language': 'en-IE,en-GB,en;q=0.9',
         'Referer': 'https://www.diy.ie/',
-        'DNT': '1'
     }
 
     try:
@@ -126,7 +112,7 @@ def start_extraction(url):
         desc_tag = soup.find('div', {'id': 'product-details'})
         description = desc_tag.text.strip()[:600] if desc_tag else "No description available."
 
-        # MAGIA DA IA ACONTECE AQUI
+        # CHAMA A IA E MOSTRA O RESULTADO NO NOVO PAINEL
         rewritten_title, rewritten_description = generate_optimized_content(title_text, description)
 
         product_data = {
@@ -148,26 +134,21 @@ def start_extraction(url):
         with open(os.path.join(product_path, "data.json"), "w", encoding="utf-8") as f:
             json.dump(product_data, f, indent=4, ensure_ascii=False)
 
-        print("📸 Forcing original HD photos download...")
+        print("📸 Downloading images...")
         img_urls = []
-
         og_image = soup.find('meta', property='og:image')
         if og_image and og_image.get('content'):
             img_urls.append(og_image['content'].split('?')[0])
 
         black_list = ['thumb', 'icon', 'logo', 'badge', 'svg', 'avatar']
-
         for img in soup.find_all('img'):
             src = img.get('src') or img.get('data-src')
             if not src: continue
             if src.startswith('//'): src = 'https:' + src
             if not src.startswith('http'): continue
-
-            src_lower = src.lower()
-            if any(lixo in src_lower for lixo in black_list): continue
-
+            if any(lixo in src.lower() for lixo in black_list): continue
+            
             src_clean = src.split('?')[0]
-
             if src_clean not in img_urls:
                 img_urls.append(src_clean)
 
@@ -177,18 +158,13 @@ def start_extraction(url):
                 img_data = requests.get(src, headers=headers, timeout=10).content
                 if len(img_data) > 5000:
                     img_count += 1
-                    img_name = f"image_{img_count}.jpg"
-                    with open(os.path.join(product_path, img_name), 'wb') as handler:
+                    with open(os.path.join(product_path, f"image_{img_count}.jpg"), 'wb') as handler:
                         handler.write(img_data)
-            except Exception as e:
-                print(f"  -> Image Error: {e}")
+            except:
+                pass
 
         save_extracted_link(url)
-        print(f"✅ SUCCESS: Saved OPTIMIZED JSON and {img_count} HD images in folder {folder_name}")
+        print(f"✅ SAVED in folder {folder_name}")
 
     except Exception as e:
-        print(f"❌ TECHNICAL ERROR: {e}")
-
-if __name__ == "__main__":
-    link = input("Link: ")
-    start_extraction(link)
+        print(f"❌ EXTRACTION ERROR: {e}")
