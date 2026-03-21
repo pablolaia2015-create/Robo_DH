@@ -6,99 +6,110 @@ from src.scraper import start_extraction
 from src.uploader import start_upload
 
 st.set_page_config(page_title="DH ROBOT FINAL", page_icon="🦾", layout="wide")
-st.title("🤖 DH ROBOT - V26.1 (HD Fix)")
+st.title("🤖 DH ROBOT - V26.2 (Batch HD Extraction)")
 
 os.makedirs("data", exist_ok=True)
 
 def list_json_files():
-    arquivos = []
-    for root, dirs, files in os.walk("data"):
-        for file in files:
+    files = []
+    for root, dirs, filenames in os.walk("data"):
+        for file in filenames:
             if file.endswith(".json"):
-                arquivos.append(os.path.join(root, file))
-    return arquivos
+                files.append(os.path.join(root, file))
+    return files
 
-st.subheader("1️⃣ Passo: Extrair")
-url_input = st.text_input("Cole o link COMPLETO aqui:", placeholder="https://www.diy.ie/...")
+st.subheader("1️⃣ Step: Extract (Batch Mode)")
+urls_input = st.text_area("Paste ALL FULL links here (one per line):", placeholder="https://www.diy.ie/...\nhttps://www.diy.ie/...", height=150)
 
-if st.button("🚀 INICIAR EXTRAÇÃO", use_container_width=True):
-    if "http" in url_input:
-        st.info("A forçar download das fotos originais... Aguarde.")
+if st.button("🚀 START BATCH EXTRACTION", use_container_width=True):
+    # Separa os links por linha e remove espaços em branco
+    url_list = [url.strip() for url in urls_input.split('\n') if url.strip()]
+    
+    if url_list:
+        st.info(f"Processing {len(url_list)} links... Please wait.")
         log_capture = StringIO()
-        with contextlib.redirect_stdout(log_capture), contextlib.redirect_stderr(log_capture):
-            try:
-                start_extraction(url_input.strip())
-            except Exception as e:
-                print(f"Erro: {e}")
         
+        # Inicia a barra de progresso do Streamlit
+        progress_bar = st.progress(0)
+        
+        with contextlib.redirect_stdout(log_capture), contextlib.redirect_stderr(log_capture):
+            for index, url in enumerate(url_list):
+                if "http" in url:
+                    try:
+                        start_extraction(url)
+                    except Exception as e:
+                        print(f"Error on {url}: {e}")
+                
+                # Atualiza a barra de progresso
+                progress_bar.progress((index + 1) / len(url_list))
+                
         if list_json_files():
-            st.success("✅ Extração perfeita!")
+            st.success("✅ Batch Extraction Completed!")
             time.sleep(2)
             st.rerun()
         else:
-            st.error("❌ Ocorreu um erro.")
+            st.error("❌ An error occurred or no new data was extracted.")
     else:
-        st.error("Link inválido.")
+        st.warning("Please paste at least one valid link.")
 
 st.markdown("---")
 
-st.subheader("🔍 2️⃣ Passo: Revisar Dados e Imagens")
-arquivos = list_json_files()
+st.subheader("🔍 2️⃣ Step: Review Data and Images")
+extracted_files = list_json_files()
 
-if arquivos:
-    opcoes = {f: os.path.basename(os.path.dirname(f)) for f in arquivos}
-    selected_file = st.selectbox("Escolha um produto para revisar:", arquivos, format_func=lambda x: opcoes[x])
-    
+if extracted_files:
+    options = {f: os.path.basename(os.path.dirname(f)) for f in extracted_files}
+    selected_file = st.selectbox("Choose a product to review:", extracted_files, format_func=lambda x: options[x])
+
     if selected_file:
-        pasta_do_produto = os.path.dirname(selected_file)
-        imagens = []
+        product_folder = os.path.dirname(selected_file)
+        images = []
         for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
-            imagens.extend(glob.glob(os.path.join(pasta_do_produto, ext)))
-            
-        with st.expander(f"Revisar: {opcoes[selected_file]}", expanded=True):
-            aba1, aba2 = st.tabs(["📝 Dados (Texto)", f"🖼️ Imagens HD ({len(imagens)})"])
-            
-            with aba1:
+            images.extend(glob.glob(os.path.join(product_folder, ext)))
+
+        with st.expander(f"Reviewing: {options[selected_file]}", expanded=True):
+            tab1, tab2 = st.tabs(["📝 Data (Text)", f"🖼️ HD Images ({len(images)})"])
+
+            with tab1:
                 try:
                     with open(selected_file, 'r', encoding='utf-8') as f:
                         st.json(json.load(f))
                 except Exception as e:
-                    st.warning(f"Erro a ler os dados: {e}")
-                    
-            with aba2:
-                if imagens:
-                    st.info("💡 DICA: Clica no ícone das setinhas ⤢ no canto superior direito da imagem para ver em ecrã inteiro!")
+                    st.warning(f"Error reading data: {e}")
+
+            with tab2:
+                if images:
+                    st.info("💡 TIP: Click the expand icon ⤢ in the top right corner of the image to view fullscreen!")
                     cols = st.columns(2)
-                    for i, img_path in enumerate(imagens):
-                        # Imagem limpa e nativa. O botão de expandir já vem com ela!
-                        cols[i % 2].image(img_path, use_container_width=True, caption=f"Foto {i+1}")
+                    for i, img_path in enumerate(images):
+                        cols[i % 2].image(img_path, use_container_width=True, caption=f"Image {i+1}")
                 else:
-                    st.info("Nenhuma imagem encontrada nesta pasta.")
-        
+                    st.info("No images found in this folder.")
+
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🗑️ Apagar apenas este produto", use_container_width=True):
-                shutil.rmtree(pasta_do_produto)
+            if st.button("🗑️ Delete ONLY this product", use_container_width=True):
+                shutil.rmtree(product_folder)
                 st.rerun()
         with col2:
-            if st.button("💣 LIMPAR BANCADA INTEIRA", type="primary", use_container_width=True):
+            if st.button("💣 CLEAR ENTIRE WORKBENCH", type="primary", use_container_width=True):
                 shutil.rmtree("data")
                 os.makedirs("data", exist_ok=True)
                 st.rerun()
 else:
-    st.info("Nenhum arquivo encontrado para revisão.")
+    st.info("No files found for review.")
 
 st.markdown("---")
 
-st.subheader("📤 3️⃣ Passo: Enviar para o Site")
-if st.button("🚀 UPLOAD FINAL PARA O ALVIM", type="primary", use_container_width=True):
-    if arquivos:
-        with st.spinner("Enviando tudo para o servidor..."):
+st.subheader("📤 3️⃣ Step: Upload to Website")
+if st.button("🚀 FINAL UPLOAD TO ALVIM", type="primary", use_container_width=True):
+    if extracted_files:
+        with st.spinner("Sending everything to the server..."):
             try:
                 start_upload()
-                st.success("✨ TUDO ENVIADO COM SUCESSO!")
+                st.success("✨ EVERYTHING UPLOADED SUCCESSFULLY!")
                 st.balloons()
             except Exception as e:
-                st.error(f"Erro no Upload: {e}")
+                st.error(f"Upload Error: {e}")
     else:
-        st.error("Nada para enviar!")
+        st.error("Nothing to upload!")
