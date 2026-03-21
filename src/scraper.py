@@ -28,7 +28,8 @@ def generate_optimized_content(original_title, original_description):
 
     print("🤖 AI is rewriting product content for SEO...")
     
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # URL ATUALIZADA: A Google descontinuou o 1.5, agora usamos o motor mais recente (2.5-flash)
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
     
     prompt = f"""
     You are an expert e-commerce copywriter and SEO specialist. 
@@ -51,7 +52,6 @@ def generate_optimized_content(original_title, original_description):
     Original Description: {original_description}
     """
     
-    # PACOTE LIMPO: Removida a configuração que a v1 não aceitava
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
     }
