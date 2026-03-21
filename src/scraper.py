@@ -28,8 +28,8 @@ def generate_optimized_content(original_title, original_description):
 
     print("🤖 AI is rewriting product content for SEO...")
     
-    # URL CORRIGIDA: Mudamos para o modelo gemini-pro que é 100% estavel
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+    # URL DEFINITIVA E OFICIAL DA GOOGLE (v1 e gemini-1.5-flash)
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     
     prompt = f"""
     You are an expert e-commerce copywriter and SEO specialist. 
@@ -176,4 +176,3 @@ def start_extraction(url):
 
     except Exception as e:
         print(f"❌ EXTRACTION ERROR: {e}")
-
