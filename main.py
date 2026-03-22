@@ -1,51 +1,60 @@
-import os
-from src.scraper import start_extraction
-from src.uploader import start_upload
+import os, sys, time
+# Adiciona src ao caminho para podermos importar os módulos
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+from scraper import start_extraction
+from uploader import start_upload
+
+def print_header():
+    """Desenha o cabeçalho bonitinho apenas UMA vez."""
+    # os.system('clear') # Opcional: limpa o ecrã ao iniciar
+    print("\n" + "="*40)
+    print("         DUBLINER HANDYMAN ROBOT")
+    print("             VERSION V27.3.1 GOLD")
+    print("="*40 + "\n")
+
+def print_menu():
+    """Mostra apenas as opções de ação."""
+    print("✅ ESCOLHA UMA AÇÃO:")
+    print("   [1] 🕷️ SCRAPE PRODUTO (B&Q)")
+    print("   [2] 📤 UPLOAD PARA O SITE (ALVIM)")
+    print("   [0] 👋 SAIR")
+    print("-" * 40)
 
 def main():
-    while True:
-        print("\n" + "="*35)
-        print("      🤖 DH ROBOT - V17.5 PRO")
-        print("="*35)
-        print("[1] SCRAPE (Extrair do B&Q)")
-        print("[2] UPLOAD (Enviar para o Alvim)")
-        print("[3] CLOUD PUSH (Guardar na Nuvem)")
-        print("[4] CLOUD PULL (Baixar da Nuvem)")
-        print("[0] SAIR")
-        
-        choice = input("\nEscolha: ")
-        
-        if choice == "1":
-            url = input("Cole o link do produto: ")
-            if url.strip():
-                start_extraction(url)
-            else:
-                print("❌ Erro: O link não pode estar vazio!")
-                
-        elif choice == "2":
-            # Aqui o robô tenta o upload (esperando a chave do Alvim)
-            start_upload()
-            
-        elif choice == "3":
-            print("\n☁️ A subir alterações para o GitHub...")
-            os.system("git add .")
-            # Aspas duplas para o Windows não se perder nos espaços
-            os.system('git commit -m "Auto-sync from Robot Menu"')
-            os.system("git push origin main")
-            print("✅ Tudo guardado na nuvem!")
+    print_header() # Chamado apenas UMA vez aqui
 
-        elif choice == "4":
-            print("\n📥 A baixar novidades do GitHub...")
-            # Puxa o que foi feito no telemóvel para o notebook
-            os.system("git pull origin main")
-            print("✅ Notebook atualizado com sucesso!")
+    while True:
+        print_menu() # As opções aparecem a cada loop
+        choice = input("👉 Digite uma opção: ").strip()
+
+        if choice == "1":
+            print("\n" + "*"*40)
+            print("🕷️ MODO SCRAPER B&Q ATIVO")
+            link = input("🔗 COLE O LINK DA B&Q: ").strip()
             
+            # PROTEÇÃO: Verifica se o link está vazio
+            if not link:
+                print("\n❌ Erro: Nenhum link foi colado. Voltando ao menu...")
+                print("*"*40 + "\n")
+                continue # Recomeça o loop sem tentar extrair
+
+            print("\n🕵️‍♂️ Iniciando extração furtiva...")
+            start_extraction(link)
+            print("\n" + "*"*40 + "\n")
+
+        elif choice == "2":
+            print("\n" + "^"*40)
+            print("📤 MODO UPLOAD ATIVO")
+            print("\nStarting uploader...")
+            # start_upload() # Comentado porque você disse 'esquece Alvim' hoje
+            print("Upload pulado. Foco no código local.")
+            print("\n" + "^"*40 + "\n")
+
         elif choice == "0":
-            print("Goodbye, Pablo! Bom descanso.")
+            print("\n👋 Saindo. Adeus, Master! Encerrando com qualidade.")
             break
-            
         else:
-            print("Opção Inválida!")
+            print("\n❌ Opção inválida. Tente novamente.\n")
 
 if __name__ == "__main__":
     main()
