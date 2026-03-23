@@ -2,53 +2,62 @@ import os, sys, time
 # Adiciona src ao caminho para podermos importar os módulos
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 from scraper import start_extraction
-from uploader import start_upload
+# from uploader import start_upload  # Desativado temporariamente
 
 def print_header():
-    """Desenha o cabeçalho bonitinho apenas UMA vez."""
-    # os.system('clear') # Opcional: limpa o ecrã ao iniciar
     print("\n" + "="*40)
     print("         DUBLINER HANDYMAN ROBOT")
-    print("             VERSION V27.3.1 GOLD")
+    print("             VERSION V27.5 GOLD")
     print("="*40 + "\n")
 
 def print_menu():
-    """Mostra apenas as opções de ação."""
     print("✅ ESCOLHA UMA AÇÃO:")
     print("   [1] 🕷️ SCRAPE PRODUTO (B&Q)")
     print("   [2] 📤 UPLOAD PARA O SITE (ALVIM)")
+    print("   [3] ☁️ CLOUD PUSH (Guardar no GitHub)")
+    print("   [4] ☁️ CLOUD PULL (Baixar do GitHub)")
     print("   [0] 👋 SAIR")
     print("-" * 40)
 
 def main():
-    print_header() # Chamado apenas UMA vez aqui
+    print_header()
 
     while True:
-        print_menu() # As opções aparecem a cada loop
+        print_menu()
         choice = input("👉 Digite uma opção: ").strip()
 
         if choice == "1":
             print("\n" + "*"*40)
             print("🕷️ MODO SCRAPER B&Q ATIVO")
             link = input("🔗 COLE O LINK DA B&Q: ").strip()
-            
-            # PROTEÇÃO: Verifica se o link está vazio
             if not link:
-                print("\n❌ Erro: Nenhum link foi colado. Voltando ao menu...")
-                print("*"*40 + "\n")
-                continue # Recomeça o loop sem tentar extrair
-
+                print("\n❌ Erro: Nenhum link foi colado.")
+                continue
             print("\n🕵️‍♂️ Iniciando extração furtiva...")
             start_extraction(link)
-            print("\n" + "*"*40 + "\n")
+            print("*"*40 + "\n")
 
         elif choice == "2":
             print("\n" + "^"*40)
             print("📤 MODO UPLOAD ATIVO")
-            print("\nStarting uploader...")
-            # start_upload() # Comentado porque você disse 'esquece Alvim' hoje
-            print("Upload pulado. Foco no código local.")
-            print("\n" + "^"*40 + "\n")
+            print("Upload em pausa. Foco na extração local e Nuvem.")
+            print("^"*40 + "\n")
+
+        elif choice == "3":
+            print("\n" + "☁️"*15)
+            print("Iniciando Backup para o GitHub...")
+            os.system("git add .")
+            os.system('git commit -m "Auto-backup V27.5 pelo Menu do Robo"')
+            os.system("git push")
+            print("✅ Backup concluído com sucesso!")
+            print("☁️"*15 + "\n")
+
+        elif choice == "4":
+            print("\n" + "☁️"*15)
+            print("Procurando atualizações no GitHub...")
+            os.system("git pull")
+            print("✅ Atualização concluída!")
+            print("☁️"*15 + "\n")
 
         elif choice == "0":
             print("\n👋 Saindo. Adeus, Master! Encerrando com qualidade.")

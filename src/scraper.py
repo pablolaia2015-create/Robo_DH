@@ -91,5 +91,6 @@ def start_extraction(url):
         with open(os.path.join(path, "data.json"), "w", encoding="utf-8") as f:
             json.dump(product_data, f, indent=4, ensure_ascii=False)
         print(f"✅ SUCESSO COMPLETO: {product_data['name']} | €{raw_price}")
-    except Exception as e: print(f"❌ FALHA: {e}")
-
+    except Exception as e:
+        print(f"⚠️ Erro exato da IA: {str(e)}")
+        return fallback_data
