@@ -2,12 +2,13 @@ import os, sys, time
 # Adiciona src ao caminho para podermos importar os módulos
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 from scraper import start_extraction
-# from uploader import start_upload  # Desativado temporariamente
+# REATIVADO: Importando a função de upload do ficheiro uploader.py
+from uploader import start_upload  
 
 def print_header():
     print("\n" + "="*40)
     print("         DUBLINER HANDYMAN ROBOT")
-    print("             VERSION V27.5 GOLD")
+    print("             VERSION V27.6 GOLD")
     print("="*40 + "\n")
 
 def print_menu():
@@ -40,14 +41,15 @@ def main():
         elif choice == "2":
             print("\n" + "^"*40)
             print("📤 MODO UPLOAD ATIVO")
-            print("Upload em pausa. Foco na extração local e Nuvem.")
+            print("Iniciando envio dos produtos na pasta 'data' para o Alvim...")
+            start_upload() # Chama a função que revisámos anteriormente
             print("^"*40 + "\n")
 
         elif choice == "3":
             print("\n" + "☁️"*15)
             print("Iniciando Backup para o GitHub...")
             os.system("git add .")
-            os.system('git commit -m "Auto-backup V27.5 pelo Menu do Robo"')
+            os.system('git commit -m "Auto-backup V27.6 pelo Menu do Robo"')
             os.system("git push")
             print("✅ Backup concluído com sucesso!")
             print("☁️"*15 + "\n")

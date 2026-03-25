@@ -21,6 +21,21 @@ def extract_price_from_schema(soup):
     except: pass
     return None
 
+def extract_main_image(soup):
+    og_image = soup.find('meta', property='og:image')
+    if og_image and og_image.get('content'): return og_image['content']
+    try:
+        schemas = soup.find_all('script', type='application/ld+json')
+        for schema in schemas:
+            data = json.loads(schema.string)
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if item.get('@type') == 'Product' and item.get('image'):
+                    img = item.get('image')
+                    return img[0] if isinstance(img, list) else img
+    except: pass
+    return None
+
 def extract_all_dimensions(text):
     pattern = r'(\d+mm)'
     matches = re.findall(pattern, text, re.IGNORECASE)
@@ -28,41 +43,67 @@ def extract_all_dimensions(text):
 
 def generate_optimized_content(title, desc, price):
     api_key = os.getenv("GOOGLE_API_KEY")
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     size = extract_all_dimensions(title + " " + desc)
     
+    try:
+        price_float = float(price.replace(',', '.')) if price else 0.0
+    except:
+        price_float = 0.0
+
+    # MOLDE EXATO DA API DO ALVIM (TEXTO LIMPO, SEM HTML)
     prompt = f"""
     You are a professional e-commerce specialist.
-    Title: {title}
-    Price: {price}
-    Desc: {desc}
+    Raw Title: {title}
+    Raw Price: {price}
+    Raw Description: {desc}
     
-    Return ONLY a valid JSON object with these exact keys: "name", "description" (HTML formatting), "category" (Internal Doors), "serviceSlug" (internal-doors), "color" (Standard), "storeEntries" (with price {price} and size '{size}').
+    Return ONLY a valid JSON object matching EXACTLY this structure (do not add markdown blocks like ```json).
+    CRITICAL INSTRUCTION FOR DESCRIPTION: Use PLAIN TEXT ONLY. DO NOT USE ANY HTML TAGS (no <p>, no <b>, no <ul>). Use standard newline characters (\\n) for paragraphs.
+    {{
+        "name": "{title}",
+        "description": "Professional plain text description here.\\n\\nSecond paragraph here.",
+        "category": "Internal Doors",
+        "color": "Standard",
+        "storeEntries": [
+            {{
+                "storeName": "B&Q",
+                "price": {price_float},
+                "inventory": [
+                    {{
+                        "size": "{size}",
+                        "qty": 1
+                    }}
+                ]
+            }}
+        ]
+    }}
     """
     
-    # O Fallback super seguro caso a IA da Google falhe por limite de uso
     fallback_data = {
         "name": title,
-        "description": f"<p>Premium quality {title} for your home projects.</p>",
+        "description": f"Premium quality {title} for your home projects.\n\nIdeal for upgrades and renovations.",
         "category": "Internal Doors",
-        "serviceSlug": "internal-doors",
         "color": "Standard",
-        "storeEntries": [{"storeName": "B&Q", "price": float(price) if price else 0.0, "inventory": [{"size": size, "qty": 1}]}]
+        "storeEntries": [{"storeName": "B&Q", "price": price_float, "inventory": [{"size": size, "qty": 1}]}]
     }
 
     try:
         import requests
-        time.sleep(2) # Pausa de segurança para não ser bloqueado pela Google
+        time.sleep(2)
         res = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
         
         if res.status_code == 200 and 'candidates' in res.json():
             ai_text = res.json()['candidates'][0]['content']['parts'][0]['text']
-            return json.loads(ai_text.strip().removeprefix('```json').removesuffix('```').strip())
+            cleaned_json = ai_text.strip().removeprefix('```json').removesuffix('```').strip()
+            
+            # Limpeza dupla: garante que se a IA teimar em usar HTML, nós apagamos!
+            data = json.loads(cleaned_json)
+            data["description"] = re.sub(r'<[^>]+>', '', data["description"])
+            return data
         else:
-            print("⚠️ A Google (Gemini) não respondeu bem. Usando Fallback.")
             return fallback_data
-    except Exception as e:
-        print(f"⚠️ Erro de comunicação com a IA. Usando Fallback.")
+    except Exception:
         return fallback_data
 
 def start_extraction(url):
@@ -84,13 +125,22 @@ def start_extraction(url):
         raw_desc = desc_tag.get_text() if hasattr(desc_tag, 'get_text') else ""
 
         product_data = generate_optimized_content(raw_title, raw_desc, raw_price)
+        # O backend do Alvim exige o link no storeEntries
         product_data["storeEntries"][0]["link"] = url
 
         path = os.path.join(DATA_DIR, "".join(x for x in product_data["name"] if x.isalnum() or x in " -_").strip())
         os.makedirs(path, exist_ok=True)
+        
         with open(os.path.join(path, "data.json"), "w", encoding="utf-8") as f:
             json.dump(product_data, f, indent=4, ensure_ascii=False)
-        print(f"✅ SUCESSO COMPLETO: {product_data['name']} | €{raw_price}")
-    except Exception as e:
-        print(f"⚠️ Erro exato da IA: {str(e)}")
-        return fallback_data
+            
+        img_url = extract_main_image(soup)
+        if img_url:
+            if img_url.startswith('//'): img_url = 'https:' + img_url
+            img_data = scraper.get(img_url, timeout=15).content
+            with open(os.path.join(path, "foto_1.jpg"), 'wb') as handler:
+                handler.write(img_data)
+            print("📸 Fotografia guardada!")
+
+        print(f"✅ SUCESSO COMPLETO (TEXTO LIMPO): {product_data['name']} | €{raw_price}")
+    except Exception as e: print(f"❌ FALHA: {e}")
