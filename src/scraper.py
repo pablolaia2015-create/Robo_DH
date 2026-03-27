@@ -4,7 +4,29 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 load_dotenv()
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+# CAMINHOS BASE
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+LINKS_FILE = os.path.join(BASE_DIR, "processed_links.txt") # O nosso bloco de notas vigia de links
+CATEGORIES_FILE = os.path.join(BASE_DIR, "categories.txt") # O bloco de notas de categorias
+
+# --- FUNÇÕES DE MEMÓRIA DE CATEGORIAS ---
+def load_categories():
+    """Lê as categorias que o robô já aprendeu do bloco de notas."""
+    if os.path.exists(CATEGORIES_FILE):
+        with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
+            cats = [line.strip() for line in f if line.strip()]
+            if cats: return cats
+    # Se estiver vazio, estas são as "Sementes"
+    return ["Internal Doors", "External Doors", "Doors & Hardware", "Handles", "Hinges", "Painting", "General"]
+
+def save_category(new_cat):
+    """Guarda uma categoria nova se a IA a inventar."""
+    cats = load_categories()
+    if new_cat not in cats:
+        with open(CATEGORIES_FILE, "a", encoding="utf-8") as f:
+            f.write(new_cat + "\n")
+# ----------------------------------------------
 
 def extract_price_from_schema(soup):
     try:
@@ -41,7 +63,7 @@ def extract_all_dimensions(text):
     matches = re.findall(pattern, text, re.IGNORECASE)
     return " x ".join(matches) if matches else "Standard"
 
-def generate_optimized_content(title, desc, price):
+def generate_optimized_content(title, desc, price, existing_categories):
     api_key = os.getenv("GOOGLE_API_KEY")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     size = extract_all_dimensions(title + " " + desc)
@@ -51,27 +73,37 @@ def generate_optimized_content(title, desc, price):
     except:
         price_float = 0.0
 
-    # MOLDE EXATO DA API DO ALVIM (TEXTO LIMPO, SEM HTML)
+    cats_str = ", ".join(f'"{c}"' for c in existing_categories)
+
+    # --- O CÉREBRO HIPERINTELIGENTE (AGORA COM COR!) ---
     prompt = f"""
-    You are a professional e-commerce specialist.
+    You are an expert e-commerce catalog manager.
     Raw Title: {title}
-    Raw Price: {price}
     Raw Description: {desc}
     
-    Return ONLY a valid JSON object matching EXACTLY this structure (do not add markdown blocks like ```json).
-    CRITICAL INSTRUCTION FOR DESCRIPTION: Use PLAIN TEXT ONLY. DO NOT USE ANY HTML TAGS (no <p>, no <b>, no <ul>). Use standard newline characters (\\n) for paragraphs.
+    TASKS:
+    1. Clean Title: Remove generic measurements from the title to make it elegant, BUT keep essential model names. 
+    2. Dynamic Category with Memory:
+       Here is the list of CURRENTLY EXISTING categories in our store: [{cats_str}]
+       - RULE A: You MUST try to categorize the product into one of these existing categories if it makes logical sense.
+       - RULE B: IF AND ONLY IF the product absolutely does not fit ANY of the existing categories, you may create a NEW, simple, 1-2 word category (e.g., "Sealants", "PPE", "Locks"). ALWAYS use English plural where applicable.
+    3. Identify Size/Volume: Extract the size intelligently based on the product. (e.g., "1981mm x 838mm", "2Ltr", "300ml"). If no size makes sense, return "Standard".
+    4. Identify Color/Finish: Extract the color or finish of the product from the title or description (e.g., "White", "Clear", "Chrome", "Polished Brass", "Black", "Pine"). If no color/finish is mentioned, return "Standard".
+    5. Rewrite Description: Create a UNIQUE, highly engaging, and professional plain text description. DO NOT use HTML tags. Use double line breaks (\\n\\n) for paragraphs.
+    
+    Return ONLY a valid JSON object matching EXACTLY this structure (no markdown blocks):
     {{
-        "name": "{title}",
-        "description": "Professional plain text description here.\\n\\nSecond paragraph here.",
-        "category": "Internal Doors",
-        "color": "Standard",
+        "name": "<Cleaned Title>",
+        "description": "<Your plain text description>",
+        "category": "<The chosen existing category OR the newly created one>",
+        "color": "<The extracted color/finish>",
         "storeEntries": [
             {{
                 "storeName": "B&Q",
                 "price": {price_float},
                 "inventory": [
                     {{
-                        "size": "{size}",
+                        "size": "<The extracted size/volume>",
                         "qty": 1
                     }}
                 ]
@@ -81,9 +113,9 @@ def generate_optimized_content(title, desc, price):
     """
     
     fallback_data = {
-        "name": title,
-        "description": f"Premium quality {title} for your home projects.\n\nIdeal for upgrades and renovations.",
-        "category": "Internal Doors",
+        "name": re.sub(r'(?i)(\(?[hwdt]\)?\s*)?\d+(?:mm|cm)x?|x\d+(?:mm|cm)', '', title).strip(' ,-'),
+        "description": f"Premium quality {title} for your home projects.\n\nIdeal for professional installations.",
+        "category": "General",
         "color": "Standard",
         "storeEntries": [{"storeName": "B&Q", "price": price_float, "inventory": [{"size": size, "qty": 1}]}]
     }
@@ -97,7 +129,6 @@ def generate_optimized_content(title, desc, price):
             ai_text = res.json()['candidates'][0]['content']['parts'][0]['text']
             cleaned_json = ai_text.strip().removeprefix('```json').removesuffix('```').strip()
             
-            # Limpeza dupla: garante que se a IA teimar em usar HTML, nós apagamos!
             data = json.loads(cleaned_json)
             data["description"] = re.sub(r'<[^>]+>', '', data["description"])
             return data
@@ -107,6 +138,13 @@ def generate_optimized_content(title, desc, price):
         return fallback_data
 
 def start_extraction(url):
+    if os.path.exists(LINKS_FILE):
+        with open(LINKS_FILE, "r", encoding="utf-8") as f:
+            if url in f.read():
+                print(f"\n🛑 AVISO: O link já foi extraído anteriormente!")
+                print("Ignorando a extração para não sujar o sistema.\n")
+                return
+
     scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows'})
     try:
         time.sleep(random.uniform(2, 5))
@@ -124,8 +162,14 @@ def start_extraction(url):
         desc_tag = soup.find('div', {'id': 'product-details'}) or soup.find('meta', {'name': 'description'})
         raw_desc = desc_tag.get_text() if hasattr(desc_tag, 'get_text') else ""
 
-        product_data = generate_optimized_content(raw_title, raw_desc, raw_price)
-        # O backend do Alvim exige o link no storeEntries
+        current_cats = load_categories()
+        product_data = generate_optimized_content(raw_title, raw_desc, raw_price, current_cats)
+        
+        ai_cat = product_data.get("category", "General")
+        if ai_cat not in current_cats:
+            save_category(ai_cat)
+            print(f"🆕 A IA aprendeu e guardou uma categoria NOVA: '{ai_cat}'")
+
         product_data["storeEntries"][0]["link"] = url
 
         path = os.path.join(DATA_DIR, "".join(x for x in product_data["name"] if x.isalnum() or x in " -_").strip())
@@ -142,5 +186,9 @@ def start_extraction(url):
                 handler.write(img_data)
             print("📸 Fotografia guardada!")
 
-        print(f"✅ SUCESSO COMPLETO (TEXTO LIMPO): {product_data['name']} | €{raw_price}")
+        print(f"✅ SUCESSO COMPLETO: {product_data['name']} | €{raw_price}")
+        
+        with open(LINKS_FILE, "a", encoding="utf-8") as f:
+            f.write(url + "\n")
+
     except Exception as e: print(f"❌ FALHA: {e}")
