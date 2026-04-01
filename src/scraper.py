@@ -7,21 +7,18 @@ load_dotenv()
 # CAMINHOS BASE
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-LINKS_FILE = os.path.join(BASE_DIR, "processed_links.txt") # O nosso bloco de notas vigia de links
-CATEGORIES_FILE = os.path.join(BASE_DIR, "categories.txt") # O bloco de notas de categorias
+LINKS_FILE = os.path.join(BASE_DIR, "processed_links.txt")
+CATEGORIES_FILE = os.path.join(BASE_DIR, "categories.txt")
 
 # --- FUNÇÕES DE MEMÓRIA DE CATEGORIAS ---
 def load_categories():
-    """Lê as categorias que o robô já aprendeu do bloco de notas."""
     if os.path.exists(CATEGORIES_FILE):
         with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
             cats = [line.strip() for line in f if line.strip()]
             if cats: return cats
-    # Se estiver vazio, estas são as "Sementes"
     return ["Internal Doors", "External Doors", "Doors & Hardware", "Handles", "Hinges", "Painting", "General"]
 
 def save_category(new_cat):
-    """Guarda uma categoria nova se a IA a inventar."""
     cats = load_categories()
     if new_cat not in cats:
         with open(CATEGORIES_FILE, "a", encoding="utf-8") as f:
@@ -63,7 +60,8 @@ def extract_all_dimensions(text):
     matches = re.findall(pattern, text, re.IGNORECASE)
     return " x ".join(matches) if matches else "Standard"
 
-def generate_optimized_content(title, desc, price, existing_categories):
+# ATENÇÃO: Agora a função recebe o store_name dinâmico!
+def generate_optimized_content(title, desc, price, existing_categories, store_name):
     api_key = os.getenv("GOOGLE_API_KEY")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     size = extract_all_dimensions(title + " " + desc)
@@ -75,7 +73,6 @@ def generate_optimized_content(title, desc, price, existing_categories):
 
     cats_str = ", ".join(f'"{c}"' for c in existing_categories)
 
-    # --- O CÉREBRO HIPERINTELIGENTE (AGORA COM COR!) ---
     prompt = f"""
     You are an expert e-commerce catalog manager.
     Raw Title: {title}
@@ -88,7 +85,7 @@ def generate_optimized_content(title, desc, price, existing_categories):
        - RULE A: You MUST try to categorize the product into one of these existing categories if it makes logical sense.
        - RULE B: IF AND ONLY IF the product absolutely does not fit ANY of the existing categories, you may create a NEW, simple, 1-2 word category (e.g., "Sealants", "PPE", "Locks"). ALWAYS use English plural where applicable.
     3. Identify Size/Volume: Extract the size intelligently based on the product. (e.g., "1981mm x 838mm", "2Ltr", "300ml"). If no size makes sense, return "Standard".
-    4. Identify Color/Finish: Extract the color or finish of the product from the title or description (e.g., "White", "Clear", "Chrome", "Polished Brass", "Black", "Pine"). If no color/finish is mentioned, return "Standard".
+    4. Identify Color/Finish: You MUST extract the primary color or finish. Actively search the title and description for words like White, Black, Clear, Chrome, Brass, Pine, Oak, Grey, Silver, Gold, etc. If you find a color word, output ONLY that word (e.g., "White"). ONLY use "Standard" if absolutely no color is mentioned anywhere.
     5. Rewrite Description: Create a UNIQUE, highly engaging, and professional plain text description. DO NOT use HTML tags. Use double line breaks (\\n\\n) for paragraphs.
     
     Return ONLY a valid JSON object matching EXACTLY this structure (no markdown blocks):
@@ -99,7 +96,7 @@ def generate_optimized_content(title, desc, price, existing_categories):
         "color": "<The extracted color/finish>",
         "storeEntries": [
             {{
-                "storeName": "B&Q",
+                "storeName": "{store_name}",
                 "price": {price_float},
                 "inventory": [
                     {{
@@ -117,7 +114,7 @@ def generate_optimized_content(title, desc, price, existing_categories):
         "description": f"Premium quality {title} for your home projects.\n\nIdeal for professional installations.",
         "category": "General",
         "color": "Standard",
-        "storeEntries": [{"storeName": "B&Q", "price": price_float, "inventory": [{"size": size, "qty": 1}]}]
+        "storeEntries": [{"storeName": store_name, "price": price_float, "inventory": [{"size": size, "qty": 1}]}]
     }
 
     try:
@@ -145,6 +142,19 @@ def start_extraction(url):
                 print("Ignorando a extração para não sujar o sistema.\n")
                 return
 
+    # --- O ROUTER: DETETAR QUAL É A LOJA ---
+    if "diy.ie" in url or "diy.com" in url:
+        store_name = "B&Q"
+    elif "screwfix.ie" in url:
+        store_name = "Screwfix"
+    elif "woodworkers.ie" in url:
+        store_name = "WoodWorkers"
+    else:
+        store_name = "Desconhecida"
+    
+    print(f"🛒 Loja detetada pelo Router: {store_name}")
+    # ----------------------------------------
+
     scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows'})
     try:
         time.sleep(random.uniform(2, 5))
@@ -163,7 +173,8 @@ def start_extraction(url):
         raw_desc = desc_tag.get_text() if hasattr(desc_tag, 'get_text') else ""
 
         current_cats = load_categories()
-        product_data = generate_optimized_content(raw_title, raw_desc, raw_price, current_cats)
+        # Passa o nome da loja para a IA!
+        product_data = generate_optimized_content(raw_title, raw_desc, raw_price, current_cats, store_name)
         
         ai_cat = product_data.get("category", "General")
         if ai_cat not in current_cats:
@@ -186,7 +197,7 @@ def start_extraction(url):
                 handler.write(img_data)
             print("📸 Fotografia guardada!")
 
-        print(f"✅ SUCESSO COMPLETO: {product_data['name']} | €{raw_price}")
+        print(f"✅ SUCESSO COMPLETO: {product_data['name']} | €{raw_price} | Loja: {store_name}")
         
         with open(LINKS_FILE, "a", encoding="utf-8") as f:
             f.write(url + "\n")
