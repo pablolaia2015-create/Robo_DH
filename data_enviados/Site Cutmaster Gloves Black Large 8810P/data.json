@@ -1,0 +1,19 @@
+{
+    "name": "Site Cutmaster Gloves Black Large (8810P)",
+    "description": "Premium quality Site Cutmaster Gloves Black Large (8810P) for your home projects.\n\nIdeal for professional installations.",
+    "category": "General",
+    "color": "Standard",
+    "storeEntries": [
+        {
+            "storeName": "Screwfix",
+            "price": 9.15,
+            "inventory": [
+                {
+                    "size": "Standard",
+                    "qty": 1
+                }
+            ],
+            "link": "https://www.screwfix.ie/p/site-cutmaster-gloves-black-large/8810p"
+        }
+    ]
+}
