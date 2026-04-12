@@ -1,5 +1,7 @@
 import os, json, time, random, re
 import cloudscraper
+import requests
+import shutil
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
@@ -9,7 +11,8 @@ from selenium.webdriver.common.by import By
 # -------------------------------------------
 
 load_dotenv()
-# CAMINHOS BASE
+
+# --- CAMINHOS BASE ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 LINKS_FILE = os.path.join(BASE_DIR, "processed_links.txt")
@@ -46,11 +49,9 @@ def extract_price_from_schema(soup):
     return None
 
 def extract_main_image(soup):
-    # Padrão Universal (OpenGraph)
     og_image = soup.find('meta', property='og:image')
     if og_image and og_image.get('content'): return og_image['content']
             
-    # Padrão Schema
     try:
         schemas = soup.find_all('script', type='application/ld+json')
         for schema in schemas:
@@ -75,11 +76,12 @@ def get_smart_title(soup):
     return "Produto Sem Nome"
 
 def extract_all_dimensions(text):
-    pattern = r'(\d+mm)'
+    pattern = r'(\d+mm|\d+x\d+\s?cm)'
     matches = re.findall(pattern, text, re.IGNORECASE)
     return " x ".join(matches) if matches else "Standard"
 
-def generate_optimized_content(title, desc, price, existing_categories, store_name):
+# --- INTELIGÊNCIA ARTIFICIAL (CÉREBRO) ---
+def generate_optimized_content(title, desc, price, existing_categories, store_name, product_url, lista_tamanhos=None):
     api_key = os.getenv("GOOGLE_API_KEY")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     size = extract_all_dimensions(title + " " + desc)
@@ -88,6 +90,7 @@ def generate_optimized_content(title, desc, price, existing_categories, store_na
     except: price_float = 0.0
 
     cats_str = ", ".join(f'"{c}"' for c in existing_categories)
+    tamanhos_str = ", ".join(lista_tamanhos) if lista_tamanhos else "Standard"
 
     prompt = f"""
     You are an expert e-commerce catalog manager.
@@ -96,29 +99,29 @@ def generate_optimized_content(title, desc, price, existing_categories, store_na
     
     TASKS:
     1. Clean Title: Remove generic measurements from the title to make it elegant, BUT keep essential model names. 
-    2. Dynamic Category with Memory:
-       Here is the list of CURRENTLY EXISTING categories in our store: [{cats_str}]
-       - RULE A: You MUST try to categorize the product into one of these existing categories if it makes logical sense.
-       - RULE B: IF AND ONLY IF the product absolutely does not fit ANY of the existing categories, you may create a NEW, simple, 1-2 word category (e.g., "Sealants", "PPE", "Locks"). ALWAYS use English plural where applicable.
-    3. Identify Size/Volume: Extract the size intelligently based on the product. (e.g., "1981mm x 838mm", "2Ltr", "300ml"). If no size makes sense, return "Standard".
-    4. Identify Color/Finish: You MUST extract the primary color or finish. Actively search the title and description for words like White, Black, Clear, Chrome, Brass, Pine, Oak, Grey, Silver, Gold, etc. If you find a color word, output ONLY that word (e.g., "White"). ONLY use "Standard" if absolutely no color is mentioned anywhere.
-    5. Rewrite Description: Create a UNIQUE, highly engaging, and professional plain text description. DO NOT use HTML tags. Use double line breaks (\\n\\n) for paragraphs.
+    2. Dynamic Category: STRICTLY categorize into ONE of these exact predefined categories: [{cats_str}]. 
+       - RULE: If the product is a handle (door handle, maçaneta, puxador), you MUST choose "Handles".
+       - RULE: If it is a hinge (dobradiça), you MUST choose "Hinges".
+       - RULE: Only create a new 1-2 word category if it is absolutely impossible to fit into the list.
+    3. Color: Extract the color, finish, or material (e.g., White, Chrome, Pine, Hardwood, Jet Black). If none, use "N/A".
+    4. Identify Sizes: Clean and format ALL these sizes found on the page: [{tamanhos_str}]. 
+       If the list is empty or just 'Standard', extract the size from the Title: {title}.
+    5. Rewrite Description: Create a UNIQUE, professional plain text description. DO NOT use HTML tags.
     
     Return ONLY a valid JSON object matching EXACTLY this structure (no markdown blocks):
     {{
         "name": "<Cleaned Title>",
         "description": "<Your plain text description>",
-        "category": "<The chosen existing category OR the newly created one>",
-        "color": "<The extracted color/finish>",
+        "category": "<Exact Category from list>",
+        "color": "<Color or Finish>",
         "storeEntries": [
             {{
                 "storeName": "{store_name}",
                 "price": {price_float},
+                "link": "{product_url}",
                 "inventory": [
-                    {{
-                        "size": "<The extracted size/volume>",
-                        "qty": 1
-                    }}
+                    {{ "size": "<Size 1>", "qty": 1 }},
+                    {{ "size": "<Size 2>", "qty": 1 }}
                 ]
             }}
         ]
@@ -127,65 +130,116 @@ def generate_optimized_content(title, desc, price, existing_categories, store_na
     
     fallback_data = {
         "name": re.sub(r'(?i)(\(?[hwdt]\)?\s*)?\d+(?:mm|cm)x?|x\d+(?:mm|cm)', '', title).strip(' ,-'),
-        "description": f"Premium quality {title} for your home projects.\n\nIdeal for professional installations.",
+        "description": f"Premium quality {title}.\n\nIdeal for professional installations.",
         "category": "General",
-        "color": "Standard",
-        "storeEntries": [{"storeName": store_name, "price": price_float, "inventory": [{"size": size, "qty": 1}]}]
+        "color": "N/A",
+        "storeEntries": [{"storeName": store_name, "price": price_float, "link": product_url, "inventory": [{"size": size, "qty": 1}]}]
     }
 
     try:
-        import requests
         time.sleep(2)
         res = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
         if res.status_code == 200 and 'candidates' in res.json():
             ai_text = res.json()['candidates'][0]['content']['parts'][0]['text']
             cleaned_json = ai_text.strip().removeprefix('```json').removesuffix('```').strip()
-            try:
-                data = json.loads(cleaned_json)
-                data["description"] = re.sub(r'<[^>]+>', '', data["description"])
-                return data
-            except:
-                return fallback_data
-        else:
-            return fallback_data
-    except:
+            data = json.loads(cleaned_json)
+            data["description"] = re.sub(r'<[^>]+>', '', data["description"])
+            return data
+    except Exception as e:
+        print(f"⚠️ Erro na IA, a usar fallback: {e}")
         return fallback_data
+    return fallback_data
 
 # --- O ROBÔ QUE ABRE O CHROME DE VERDADE ---
-def extract_with_real_browser(url):
-    print("🤖 Vestindo o Fato Mecânico (Chrome Automático) para enganar o segurança...")
+def extract_with_real_browser(url, store_name):
+    print(f"🤖 Vestindo o Fato Mecânico para enganar a segurança da {store_name}...")
     options = uc.ChromeOptions()
-    # Abre uma janela real de forma automatizada para furar o Cloudflare
     driver = uc.Chrome(options=options, version_main=146)
     
     try:
         driver.get(url)
-        print("⏳ Esperando 6 segundos para o Cloudflare nos deixar passar e a página carregar...")
-        time.sleep(6) 
+        print("⏳ Esperando 8 segundos para a proteção nos deixar passar...")
+        time.sleep(8) 
         
-        # 1. Puxa o Título visível no ecrã
+        driver.execute_script("window.scrollBy(0, 500);")
+        time.sleep(2)
+        
         try:
             title = driver.find_element(By.CSS_SELECTOR, "h1").text
         except:
             title = driver.title
 
-        # 2. Puxa a Imagem original da galeria
-        img_url = None
+        # --- NOVO: Captura de múltiplos tamanhos ---
+        lista_tamanhos_brutos = []
         try:
-            # Tenta encontrar o link principal da galeria do WordPress
-            a_element = driver.find_element(By.CSS_SELECTOR, ".woocommerce-product-gallery__image a")
-            img_url = a_element.get_attribute("href")
+            elementos_sizes = driver.find_elements(By.CSS_SELECTOR, '.swatch-option.text, .size-selection, [class*="size"] button')
+            if not elementos_sizes and store_name == "TJ O'Mahony":
+                elementos_sizes = driver.find_elements(By.CSS_SELECTOR, '.product-options-wrapper .size-grid-item')
+            
+            lista_tamanhos_brutos = [el.text.strip() for el in elementos_sizes if el.text.strip()]
         except:
             pass
+
+        img_url = None
+        foto_screenshot_path = None 
+        
+        try:
+            if store_name == "Leroy Merlin":
+                try:
+                    meta_img = driver.find_element(By.CSS_SELECTOR, 'meta[property="og:image"]')
+                    img_url = meta_img.get_attribute("content")
+                except: pass
+                
+                if not img_url:
+                    img_element = driver.find_element(By.CSS_SELECTOR, 'img[alt*="Porta"], picture img')
+                    src = img_element.get_attribute("src")
+                    if src and "data:image" not in src: 
+                        img_url = src
+            elif store_name == "TJ O'Mahony":
+                try:
+                    time.sleep(2)
+                    fotorama_img = driver.find_element(By.CSS_SELECTOR, '.fotorama__loaded--img.fotorama__active img.fotorama__img')
+                    img_url = fotorama_img.get_attribute("src")
+                    print(f"🎯 Imagem TJ O'Mahony encontrada!")
+                except: pass
+            else:
+                a_element = driver.find_element(By.CSS_SELECTOR, ".woocommerce-product-gallery__image a")
+                img_url = a_element.get_attribute("href")
+        except Exception as e:
+            print("⚠️ Selenium não conseguiu a foto original.")
             
-        # 3. Puxa o código-fonte inteiro para a IA ler a descrição depois
+        if not img_url:
+            print("📸 Imagem original protegida. O Robô vai tirar um Print Screen da tela!")
+            caminho_temporario = os.path.join(BASE_DIR, "print_temporario.jpg")
+            driver.save_screenshot(caminho_temporario)
+            foto_screenshot_path = caminho_temporario 
+            
         html = driver.page_source
         
-        return title, img_url, html
+        # Devolve 5 variáveis no total (incluindo a lista de tamanhos)
+        return title, img_url, html, foto_screenshot_path, lista_tamanhos_brutos
+        
     finally:
         print("🚪 Fechando o Chrome Automático...")
         driver.quit()
 # ---------------------------------------------
+
+def send_to_api(product_data, image_path):
+    api_url = "https://lislock.pt/admin/api/admin/supplies"
+    print("📡 A empacotar dados e enviar para a base de dados (API)...")
+    try:
+        payload_str = json.dumps(product_data)
+        data = {'payload': payload_str}
+        files = {}
+        if image_path and os.path.exists(image_path):
+            files = [('photos', ('foto_1.jpg', open(image_path, 'rb'), 'image/jpeg'))]
+        response = requests.post(api_url, data=data, files=files if files else None, timeout=30)
+        if response.status_code in [200, 201]:
+            print("✅ SUCESSO: Item e Imagem inseridos no banco de dados!")
+        else:
+            print(f"⚠️ AVISO API: Servidor respondeu com status {response.status_code}.")
+    except Exception as e:
+        print(f"❌ ERRO API: Falha na comunicação: {e}")
 
 def start_extraction(url):
     if os.path.exists(LINKS_FILE):
@@ -196,29 +250,39 @@ def start_extraction(url):
                 return
 
     force_price_zero = False
+    print(f"🕵️‍♂️ Analisando segurança do site...")
+    
+    # 1. Configuração do Roteador Automático
+    sites_fato_mecanico = ["leroymerlin.pt", "tjomahony.ie", "prolinehardware.ie"]
+    usar_selenium = any(site in url for site in sites_fato_mecanico)
+    
     if "diy.ie" in url or "diy.com" in url: store_name = "B&Q"
     elif "screwfix.ie" in url: store_name = "Screwfix"
     elif "woodworkers.ie" in url: store_name = "WoodWorkers"
     elif "prolinehardware.ie" in url:
         store_name = "Proline Hardware"
         force_price_zero = True
-    else: store_name = "Desconhecida"
-    
-    print(f"🛒 Loja detetada pelo Router: {store_name}")
+    elif "leroymerlin.pt" in url: store_name = "Leroy Merlin"
+    elif "tjomahony.ie" in url: store_name = "TJ O'Mahony"
+    else: store_name = "Loja Padrão"
 
+    print(f"🛒 Loja detetada: {store_name} | Fato Mecânico: {'SIM' if usar_selenium else 'NÃO'}")
+
+    # 2. Execução da Extração
+    print_automatico = None
     img_url_final = None
+    lista_tamanhos_capturados = []
 
-    # --- SEPARADOR DE ESTRATÉGIAS ---
-    if store_name == "Proline Hardware":
-        # Ataca com o Fato Mecânico (Abre o Chrome)
+    if usar_selenium:
         try:
-            raw_title, img_url_final, html_content = extract_with_real_browser(url)
+            # Recebendo perfeitamente as 5 variáveis do Fato Mecânico
+            raw_title, img_url_browser, html_content, print_automatico, lista_tamanhos_capturados = extract_with_real_browser(url, store_name)
             soup = BeautifulSoup(html_content, 'html.parser')
+            img_url_final = img_url_browser if img_url_browser else extract_main_image(soup)
         except Exception as e:
             print(f"❌ Erro no Fato Mecânico: {e}")
             return
     else:
-        # Ataca de forma silenciosa e rápida (Lojas normais)
         scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows'})
         try:
             time.sleep(random.uniform(2, 5))
@@ -229,8 +293,8 @@ def start_extraction(url):
         except Exception as e:
             print(f"❌ Erro na extração normal: {e}")
             return
-    # --------------------------------
 
+    # 3. Processamento de Dados e IA
     try:
         print(f"🖨️ RADAR TÍTULO LIDO DA LOJA: '{raw_title}'") 
 
@@ -238,7 +302,12 @@ def start_extraction(url):
             raw_price = "0.00"
         else:
             raw_price = extract_price_from_schema(soup)
-            if not raw_price or raw_price == "75":
+            if (not raw_price or raw_price == "75") and store_name == "Leroy Merlin":
+                og_price = soup.find('meta', property='product:price:amount')
+                if og_price and og_price.get('content'):
+                    raw_price = og_price['content']
+            
+            if not raw_price or raw_price == "75" or raw_price == "0.00":
                  price_match = re.search(r'"price":\s?"(\d+[\.,]?\d*)"', str(soup))
                  raw_price = price_match.group(1) if price_match else "0.00"
 
@@ -250,33 +319,46 @@ def start_extraction(url):
             raw_desc = desc_tag.get_text() if hasattr(desc_tag, 'get_text') else raw_title
 
         current_cats = load_categories()
-        product_data = generate_optimized_content(raw_title, raw_desc, raw_price, current_cats, store_name)
+        
+        # O Cérebro IA recebe a lista de tamanhos agora!
+        product_data = generate_optimized_content(raw_title, raw_desc, raw_price, current_cats, store_name, url, lista_tamanhos_capturados)
         
         ai_cat = product_data.get("category", "General")
         if ai_cat not in current_cats: save_category(ai_cat)
 
-        product_data["storeEntries"][0]["link"] = url
         path = os.path.join(DATA_DIR, "".join(x for x in product_data["name"] if x.isalnum() or x in " -_").strip())
         os.makedirs(path, exist_ok=True)
         
         with open(os.path.join(path, "data.json"), "w", encoding="utf-8") as f:
             json.dump(product_data, f, indent=4, ensure_ascii=False)
-            
-        print(f"📸 RADAR IMAGEM LIDA: '{img_url_final}'") 
-        
-        if img_url_final:
-            if img_url_final.startswith('//'): img_url_final = 'https:' + img_url_final
-            # Baixa a imagem usando a biblioteca normal requests
-            import requests
-            img_data = requests.get(img_url_final, timeout=15).content
-            with open(os.path.join(path, "foto_1.jpg"), 'wb') as handler:
-                handler.write(img_data)
-            print("✅ Fotografia guardada!")
-        else:
-            print("⚠️ Nenhuma imagem encontrada.")
 
-        print(f"🚀 SUCESSO COMPLETO: {product_data['name']} | €{raw_price}")
+        # 4. Gestão da Imagem
+        foto_final_path = None
+        
+        if print_automatico and os.path.exists(print_automatico):
+            foto_final_path = os.path.join(path, "foto_1.jpg")
+            shutil.move(print_automatico, foto_final_path)
+            print("✅ Print automático anexado e movido com sucesso!")
+            
+        elif img_url_final:
+            if img_url_final.startswith('//'): img_url_final = 'https:' + img_url_final
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            try:
+                img_data = requests.get(img_url_final, headers=headers, timeout=15).content
+                foto_final_path = os.path.join(path, "foto_1.jpg")
+                with open(foto_final_path, 'wb') as handler:
+                    handler.write(img_data)
+                print("✅ Fotografia oficial guardada com sucesso!")
+            except Exception as e:
+                print(f"⚠️ Erro ao tentar baixar a foto oficial: {e}")
+        else:
+            print("⚠️ Nenhuma foto oficial encontrada e nenhum print tirado.")
+
+        # 5. Finalização
+        print(f"🚀 SUCESSO LOCAL: {product_data['name']} | €{raw_price}")
+        send_to_api(product_data, foto_final_path)
         
         with open(LINKS_FILE, "a", encoding="utf-8") as f: f.write(url + "\n")
 
-    except Exception as e: print(f"❌ FALHA FINAL: {e}")
+    except Exception as e: 
+        print(f"❌ FALHA FINAL: {e}")

@@ -1,4 +1,29 @@
+# ==========================================
+# 🔐 SEGURANÇA E CHAVES (CRÍTICO)
+# ==========================================
 .env
+.envlocal
+handyman-application-GCS.json
+# Se tiveres outras chaves JSON privadas, podes simplesmente usar: *.json
+
+# ==========================================
+# 🐍 AMBIENTE PYTHON E CACHE
+# ==========================================
+.venv/
+__pycache__/
+*.pyc
+
+# ==========================================
+# 📂 PASTAS DE DADOS (Imagens, JSONs gerados)
+# ==========================================
 data/
+data_enviados/
 logs/
-__pycache__/extracted_links_db.txt
+
+# ==========================================
+# 📝 HISTÓRICO E TESTES DO ROBÔ
+# ==========================================
+processed_links.txt
+extracted_links_db.txt
+debug_inimigo.html
+debug_*.html
