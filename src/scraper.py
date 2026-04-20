@@ -92,6 +92,12 @@ def generate_optimized_content(title, desc, price, existing_categories, store_na
     cats_str = ", ".join(f'"{c}"' for c in existing_categories)
     tamanhos_str = ", ".join(lista_tamanhos) if lista_tamanhos else "Standard"
 
+    # NOVO: Constrói a lista de inventário de forma dinâmica para o Fallback (separando os tamanhos)
+    if lista_tamanhos:
+        fallback_inventory = [{"size": t, "qty": 1} for t in lista_tamanhos]
+    else:
+        fallback_inventory = [{"size": size, "qty": 1}]
+
     prompt = f"""
     You are an expert e-commerce catalog manager.
     Raw Title: {title}
@@ -133,7 +139,7 @@ def generate_optimized_content(title, desc, price, existing_categories, store_na
         "description": f"Premium quality {title}.\n\nIdeal for professional installations.",
         "category": "General",
         "color": "N/A",
-        "storeEntries": [{"storeName": store_name, "price": price_float, "link": product_url, "inventory": [{"size": size, "qty": 1}]}]
+        "storeEntries": [{"storeName": store_name, "price": price_float, "link": product_url, "inventory": fallback_inventory}]
     }
 
     try:
