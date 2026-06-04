@@ -1,9 +1,32 @@
 import os, json, requests, glob, shutil
 from dotenv import load_dotenv
+from PIL import Image  # <-- NOVA BIBLIOTECA PARA LIDAR COM IMAGENS
 
 load_dotenv()
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 SENT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data_enviados")
+
+# --- NOVA FUNÇÃO DE COMPRESSÃO INTELIGENTE ---
+def comprimir_imagem_se_necessario(caminho_imagem, limite_mb=4.5):
+    """
+    Verifica o tamanho da imagem. Se for maior que o limite, comprime a imagem.
+    """
+    limite_bytes = limite_mb * 1024 * 1024 
+    tamanho_atual = os.path.getsize(caminho_imagem)
+    
+    if tamanho_atual > limite_bytes:
+        print(f"📸 Imagem muito pesada detectada ({(tamanho_atual/1024/1024):.2f}MB). A comprimir para o site do Alvim...")
+        try:
+            img = Image.open(caminho_imagem)
+            # Se a imagem tiver transparência (PNG disfarçado), convertemos para RGB normal
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            # Guardamos a imagem por cima da antiga, reduzindo a qualidade para 75%
+            img.save(caminho_imagem, "JPEG", quality=75, optimize=True)
+            print("✅ Imagem comprimida com sucesso para o limite permitido!")
+        except Exception as e:
+            print(f"⚠️ Erro ao tentar comprimir a imagem: {e}")
+# ---------------------------------------------
 
 def start_upload():
     # Garante que a pasta de arquivo existe antes de começarmos
@@ -25,10 +48,12 @@ def start_upload():
         # 🧠 CÉREBRO DE ROTEAMENTO NO UPLOADER
         try:
             store_name = product_data["storeEntries"][0]["storeName"]
+            product_link = product_data["storeEntries"][0]["link"]
         except:
             store_name = "Desconhecida"
+            product_link = ""
 
-        if store_name == "Leroy Merlin":
+        if store_name == "Leroy Merlin" or ".pt" in product_link:
             api_url = "https://lislock.pt/api/admin/supplies"
             prefixo = "🇵🇹 LISBOA"
         else:
@@ -45,6 +70,8 @@ def start_upload():
         
         files = []
         for img_path in glob.glob(os.path.join(path, "*.jpg")):
+            # <-- A MÁGICA ACONTECE AQUI: Comprime antes de anexar!
+            comprimir_imagem_se_necessario(img_path) 
             files.append(('photos', (os.path.basename(img_path), open(img_path, 'rb'), 'image/jpeg')))
 
         try:

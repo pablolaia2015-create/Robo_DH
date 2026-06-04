@@ -31,8 +31,8 @@ def save_category(new_cat):
     if new_cat not in cats:
         with open(CATEGORIES_FILE, "a", encoding="utf-8") as f:
             f.write(new_cat + "\n")
-# ----------------------------------------------
 
+# --- EXTRATORES AUXILIARES ---
 def extract_price_from_schema(soup):
     try:
         schemas = soup.find_all('script', type='application/ld+json')
@@ -76,29 +76,52 @@ def get_smart_title(soup):
     return "Produto Sem Nome"
 
 def extract_all_dimensions(text):
-    pattern = r'(\d+mm|\d+x\d+\s?cm)'
+    # Procura padrões como "1200mm", "1200 mm", "1.2m", "120x60cm", "120 x 60 cm"
+    pattern = r'(\d+(?:\.\d+)?\s*(?:mm|cm|m)(?:\s*x\s*\d+(?:\.\d+)?\s*(?:mm|cm|m))?)'
     matches = re.findall(pattern, text, re.IGNORECASE)
-    return " x ".join(matches) if matches else "Standard"
+    # Remove duplicados mantendo a ordem e junta tudo
+    return " / ".join(list(dict.fromkeys([m.strip() for m in matches]))) if matches else "Standard"
+
+# NOVO: Radar de Tamanhos para Extração Rápida (Cloudscraper)
+def get_smart_sizes_bs4(soup):
+    tamanhos = []
+    try:
+        seletores = [
+            '.swatch-option.text', 
+            '.size-selection', 
+            'select[id*="attribute"] option', 
+            'select[name*="size"] option',
+            '.product-options-wrapper select option'
+        ]
+        for seletor in seletores:
+            elementos = soup.select(seletor)
+            for el in elementos:
+                texto = el.get_text(strip=True)
+                if texto and not any(palavra in texto.lower() for palavra in ["choose", "select", "selecione", "escolha"]):
+                    tamanhos.append(texto)
+            if tamanhos: break # Se achou tamanhos com um seletor, para de procurar
+    except: pass
+    return list(dict.fromkeys(tamanhos))
 
 # --- INTELIGÊNCIA ARTIFICIAL (CÉREBRO) ---
 def generate_optimized_content(title, desc, price, existing_categories, store_name, product_url, lista_tamanhos=None):
     api_key = os.getenv("GOOGLE_API_KEY")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-    size = extract_all_dimensions(title + " " + desc)
+    size_from_title = extract_all_dimensions(title + " " + desc)
     
     try: price_float = float(price.replace(',', '.')) if price else 0.0
     except: price_float = 0.0
 
     cats_str = ", ".join(f'"{c}"' for c in existing_categories)
-    tamanhos_str = ", ".join(lista_tamanhos) if lista_tamanhos else "Standard"
+    tamanhos_str = ", ".join(lista_tamanhos) if lista_tamanhos else "NO SIZES FOUND"
 
     if lista_tamanhos:
         fallback_inventory = [{"size": t, "qty": 1} for t in lista_tamanhos]
     else:
-        fallback_inventory = [{"size": size, "qty": 1}]
+        fallback_inventory = [{"size": size_from_title, "qty": 1}]
 
     # 🌍 Roteador de Idiomas
-    if store_name == "Leroy Merlin":
+    if ".pt" in product_url or store_name == "Leroy Merlin":
         idioma = "PORTUGUESE (Portugal). The output MUST be entirely in Portuguese (Categories, colors, descriptions)."
     else:
         idioma = "ENGLISH. The output MUST be entirely in English."
@@ -113,12 +136,13 @@ def generate_optimized_content(title, desc, price, existing_categories, store_na
     TASKS:
     1. Clean Title: Remove generic measurements from the title to make it elegant, BUT keep essential model names. 
     2. Dynamic Category: STRICTLY categorize into ONE of these exact predefined categories: [{cats_str}]. 
-       - RULE: If the product is a handle (door handle, maçaneta, puxador), you MUST choose "Handles" (or the PT equivalent if requested).
-       - RULE: If it is a hinge (dobradiça), you MUST choose "Hinges" (or the PT equivalent).
+       - RULE: If the product is a handle (door handle, maçaneta, puxador), you MUST choose "Handles".
+       - RULE: If it is a hinge (dobradiça), you MUST choose "Hinges".
        - RULE: Only create a new 1-2 word category if it is absolutely impossible to fit into the list.
     3. Color: Extract the color, finish, or material (e.g., White, Chrome, Pine, Hardwood, Jet Black). If none, use "N/A".
-    4. Identify Sizes: Clean and format ALL these sizes found on the page: [{tamanhos_str}]. 
-       If the list is empty or just 'Standard', extract the size from the Title: {title}.
+    4. Identify Sizes: The scraper found these sizes on the page: [{tamanhos_str}]. 
+       - IF the list says "NO SIZES FOUND", try to extract the size from the Title: {title}. If none, use "Standard".
+       - CRITICAL: IF sizes ARE provided in the list (e.g. 50mm, 60mm), you MUST create an inventory entry for EACH size in the JSON. Do not output 'Standard' if specific sizes were found!
     5. Rewrite Description: Create a UNIQUE, professional plain text description. DO NOT use HTML tags.
     
     Return ONLY a valid JSON object matching EXACTLY this structure (no markdown blocks):
@@ -150,7 +174,6 @@ def generate_optimized_content(title, desc, price, existing_categories, store_na
     }
 
     try:
-        import requests
         time.sleep(2)
         res = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
         if res.status_code == 200 and 'candidates' in res.json():
@@ -169,7 +192,7 @@ def extract_with_real_browser(url, store_name):
     print(f"🤖 Vestindo o Fato Mecânico para enganar a segurança da {store_name}...")
     options = uc.ChromeOptions()
     options.add_argument("--window-size=1920,1080") 
-    driver = uc.Chrome(options=options, version_main=146)
+    driver = uc.Chrome(options=options, version_main=148)
     
     try:
         driver.get(url)
@@ -191,19 +214,41 @@ def extract_with_real_browser(url, store_name):
         except:
             title = driver.title
 
+        # 📏 NOVO: Radar Universal de Tamanhos (Apanha Dropdowns e Swatches)
         lista_tamanhos_brutos = []
         try:
-            elementos_sizes = driver.find_elements(By.CSS_SELECTOR, '.swatch-option.text, .size-selection, [class*="size"] button')
-            if not elementos_sizes and store_name == "TJ O'Mahony":
-                elementos_sizes = driver.find_elements(By.CSS_SELECTOR, '.product-options-wrapper .size-grid-item')
-            lista_tamanhos_brutos = [el.text.strip() for el in elementos_sizes if el.text.strip()]
+            seletores_tamanhos = [
+                '.swatch-option.text', 
+                '.size-selection', 
+                '[class*="size"] button',
+                '.product-options-wrapper select[id*="attribute"] option', # Magento Dropdown (TJ O'Mahony)
+                'select[name*="size"] option',
+                'select[name*="attribute"] option',
+                '.radio-button-labels label'
+            ]
+            
+            for seletor in seletores_tamanhos:
+                elementos = driver.find_elements(By.CSS_SELECTOR, seletor)
+                for el in elementos:
+                    texto = el.get_attribute("textContent")
+                    if not texto: texto = el.text
+                    texto = texto.strip()
+                    # Bloqueia palavras genéricas
+                    if texto and not any(palavra in texto.lower() for palavra in ["choose", "select", "selecione", "escolha", "option"]):
+                        lista_tamanhos_brutos.append(texto)
+                
+                if lista_tamanhos_brutos:
+                    # Remove duplicados
+                    lista_tamanhos_brutos = list(dict.fromkeys(lista_tamanhos_brutos))
+                    print(f"📏 Tamanhos detetados pelo Fato Mecânico: {lista_tamanhos_brutos}")
+                    break
         except: pass
 
-# 💰 CAPTURA DO PREÇO A QUENTE (COM PACIÊNCIA PARA LOTE)
+        # 💰 CAPTURA DO PREÇO A QUENTE 
         browser_price = None
         if store_name == "Leroy Merlin":
             print("💶 À procura do preço na página (Aguardando renderização)...")
-            for tentativa in range(15): # Tenta até 15 vezes (15 segundos max)
+            for tentativa in range(15):
                 try:
                     price_elem = driver.find_element(By.CSS_SELECTOR, '[data-cerberus="ELEM_PRIX"], .kl-hidden-accessibility, .m-price__line')
                     texto_preco = price_elem.get_attribute("textContent") or price_elem.text
@@ -211,13 +256,27 @@ def extract_with_real_browser(url, store_name):
                     if match:
                         browser_price = match.group(1).replace(',', '.')
                         print(f"✅ Preço LM apanhado com sucesso: {browser_price} €")
-                        break # Se encontrou, sai imediatamente do loop!
-                except:
-                    pass # Se deu erro (ainda não carregou), ignora e tenta de novo
-                time.sleep(1) # Espera 1 segundo e volta a olhar
+                        break 
+                except: pass
+                time.sleep(1)
+                
+        elif store_name == "Amazon":
+            print("💶 À procura do preço na Amazon...")
+            for tentativa in range(10):
+                try:
+                    # A Amazon usa várias classes diferentes para o preço
+                    price_elem = driver.find_element(By.CSS_SELECTOR, '.a-price .a-offscreen, #priceblock_ourprice, .a-color-price')
+                    texto_preco = price_elem.get_attribute("textContent") or price_elem.text
+                    match = re.search(r'(\d+[\.,]\d+)', texto_preco)
+                    if match:
+                        browser_price = match.group(1).replace(',', '.')
+                        print(f"✅ Preço Amazon apanhado com sucesso: {browser_price} €")
+                        break 
+                except: pass
+                time.sleep(1)
             
-            if not browser_price:
-                print("⚠️ O preço não apareceu no ecrã a tempo, vamos tentar no código-fonte...")
+        if not browser_price:
+            print("⚠️ O preço não apareceu no ecrã a tempo, vamos tentar no código-fonte...")
 
         img_url = None
         foto_screenshot_path = None
@@ -228,17 +287,29 @@ def extract_with_real_browser(url, store_name):
                     meta_img = driver.find_element(By.CSS_SELECTOR, 'meta[property="og:image"]')
                     img_url = meta_img.get_attribute("content")
                 except: pass
-                
                 if not img_url:
                     img_element = driver.find_element(By.CSS_SELECTOR, 'picture img, [data-testid="main-image"]')
                     src = img_element.get_attribute("src")
-                    if src and "data:image" not in src: 
-                        img_url = src
+                    if src and "data:image" not in src: img_url = src
             elif store_name == "TJ O'Mahony":
                 try:
                     time.sleep(2)
                     fotorama_img = driver.find_element(By.CSS_SELECTOR, '.fotorama__loaded--img.fotorama__active img.fotorama__img')
                     img_url = fotorama_img.get_attribute("src")
+                except: pass
+            elif store_name == "Woodies":
+                try:
+                    meta_img = driver.find_element(By.CSS_SELECTOR, 'meta[property="og:image"]')
+                    img_url = meta_img.get_attribute("content")
+                except: pass
+            elif store_name == "Amazon":
+                try:
+                    # A imagem principal da Amazon fica no landingImage ou imgBlkFront
+                    img_element = driver.find_element(By.CSS_SELECTOR, '#landingImage, #imgBlkFront')
+                    img_url = img_element.get_attribute("src")
+                    # Tenta ir buscar a versão de Alta Resolução se existir
+                    high_res = img_element.get_attribute("data-old-hires")
+                    if high_res and "http" in high_res: img_url = high_res
                 except: pass
             else:
                 a_element = driver.find_element(By.CSS_SELECTOR, ".woocommerce-product-gallery__image a")
@@ -258,44 +329,10 @@ def extract_with_real_browser(url, store_name):
     finally:
         print("🚪 Fechando o Chrome Automático...")
         driver.quit()
-# ---------------------------------------------
 
-def send_to_api(product_data, image_path):
-    try:
-        store_name = product_data["storeEntries"][0]["storeName"]
-    except:
-        store_name = "Desconhecida"
-
-    if store_name == "Leroy Merlin":
-        api_url = "https://lislock.pt/admin/api/admin/supplies"
-        print("🇵🇹 Rota Automática: Destino LISLOCK (Lisboa)")
-    else:
-        api_url = "https://dublinerhandyman.ie/admin/api/admin/supplies"
-        print("🇮🇪 Rota Automática: Destino DUBLINER HANDYMAN (Dublin)")
-    
-    print(f"📡 A empacotar dados e enviar para a API: {api_url} ...")
-    try:
-        import requests
-        import json
-        
-        payload_str = json.dumps(product_data)
-        data = {'payload': payload_str}
-        files = {}
-        
-        if image_path and os.path.exists(image_path):
-            files = [('photos', ('foto_1.jpg', open(image_path, 'rb'), 'image/jpeg'))]
-        
-        response = requests.post(api_url, data=data, files=files if files else None, timeout=30)
-        
-        if response.status_code in [200, 201]:
-            print("✅ SUCESSO: Item e Imagem inseridos no banco de dados!")
-        else:
-            print(f"⚠️ AVISO API: Servidor respondeu com status {response.status_code}.")
-            print(f"Detalhe: {response.text}")
-    except Exception as e:
-        print(f"❌ ERRO API: Falha na comunicação: {e}")
-
+# --- FUNÇÃO PRINCIPAL DE ARRANQUE ---
 def start_extraction(url):
+    # 1. Verificação de Duplicados
     if os.path.exists(LINKS_FILE):
         with open(LINKS_FILE, "r", encoding="utf-8") as f:
             saved_links = [line.strip() for line in f.readlines()]
@@ -306,9 +343,11 @@ def start_extraction(url):
     force_price_zero = False
     print(f"🕵️‍♂️ Analisando segurança do site...")
     
-    sites_fato_mecanico = ["leroymerlin.pt", "tjomahony.ie", "prolinehardware.ie"]
-    usar_selenium = any(site in url for site in sites_fato_mecanico)
+    # 2. Definição do Fato Mecânico
+    sites_fato_mecanico = ["leroymerlin.pt", "tjomahony.ie", "prolinehardware.ie", "woodies.ie", "amazon."]
+    usar_selenium = any(site in url.lower() for site in sites_fato_mecanico)
     
+    # 3. Identificação Inteligente da Loja
     if "diy.ie" in url or "diy.com" in url: store_name = "B&Q"
     elif "screwfix.ie" in url: store_name = "Screwfix"
     elif "woodworkers.ie" in url: store_name = "WoodWorkers"
@@ -317,7 +356,17 @@ def start_extraction(url):
         force_price_zero = True
     elif "leroymerlin.pt" in url: store_name = "Leroy Merlin"
     elif "tjomahony.ie" in url: store_name = "TJ O'Mahony"
-    else: store_name = "Loja Padrão"
+    elif "woodies.ie" in url: store_name = "Woodies"
+    elif "amazon." in url.lower(): store_name = "Amazon"  # <-- ATUALIZADO PARA AMAZON
+    else:
+        # CÉREBRO DINÂMICO
+        try:
+            from urllib.parse import urlparse
+            dominio = urlparse(url).netloc
+            nome_base = dominio.replace('www.', '').split('.')[0]
+            store_name = nome_base.capitalize()
+        except:
+            store_name = "Loja Padrão"
 
     print(f"🛒 Loja detetada: {store_name} | Fato Mecânico: {'SIM' if usar_selenium else 'NÃO'}")
 
@@ -342,6 +391,10 @@ def start_extraction(url):
             soup = BeautifulSoup(res.text, 'html.parser')
             raw_title = get_smart_title(soup)
             img_url_final = extract_main_image(soup)
+            # 📏 Radar de tamanhos também para extração normal!
+            lista_tamanhos_capturados = get_smart_sizes_bs4(soup)
+            if lista_tamanhos_capturados:
+                print(f"📏 Tamanhos detetados (Normal): {lista_tamanhos_capturados}")
         except Exception as e:
             print(f"❌ Erro na extração normal: {e}")
             return
@@ -353,10 +406,9 @@ def start_extraction(url):
         titulos_proibidos = ["substituída", "não encontrada", "404", "indisponível", "not found", "page not found"]
         if any(palavra in raw_title.lower() for palavra in titulos_proibidos):
             print("🛑 ALERTA: A página não existe ou o link está quebrado!")
-            print("🧹 Missão abortada para não enviar lixo para a base de dados.")
             return 
 
-        # 💰 A NOVA LÓGICA DE PREÇOS
+        # 💰 LÓGICA DE PREÇOS
         if force_price_zero:
             raw_price = "0.00"
         elif browser_price:
@@ -419,7 +471,6 @@ def start_extraction(url):
             print("⚠️ Nenhuma foto oficial encontrada e nenhum print tirado.")
 
         print(f"🚀 SUCESSO LOCAL: {product_data['name']} | €{raw_price}")
-        #send_to_api(product_data, foto_final_path)
         
         with open(LINKS_FILE, "a", encoding="utf-8") as f: f.write(url + "\n")
 

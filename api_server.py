@@ -1,9 +1,17 @@
 from flask import Flask, request, jsonify
 import sys
 import os
+import json
+import threading
+import re # Essential library to find links in the middle of text
 
-# Adiciona o diretório atual ao path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# --- CONFIGURAÇÃO DE CAMINHOS E GPS ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
+
+MEMORIA_DIR = os.path.join(BASE_DIR, "memoria")
+LINKS_FILE = os.path.join(MEMORIA_DIR, "processed_links.txt")
+# --------------------------------------
 
 from src import scraper
 from src import uploader
@@ -13,70 +21,103 @@ app = Flask(__name__)
 @app.route('/api/scrape', methods=['POST'])
 def api_scrape():
     data = request.json
-    links = data.get('links', [])
+    
+    # 1. Transform everything into raw text and replace literal line breaks ('\n') with spaces
+    texto_bruto = str(data).replace('\\n', ' ').replace('\n', ' ')
+    
+    # 2. Universal Scanner: Catches everything starting with http:// or https://
+    # until it finds a space, quote, comma, or formatting character.
+    links_brutos = re.findall(r'(https?://[^\s\'"\\,]+)', texto_bruto)
+    
+    # 3. Final Cleanup: Removes unwanted characters at the end of the link (e.g., periods)
+    links = [link.rstrip(".,;:)'\"") for link in links_brutos]
+    
+    # Remove duplicates
+    links = list(set(links))
     
     if not links:
-        return jsonify({"mensagem_telegram": "❌ Erro: Nenhum link recebido."}), 400
+        return jsonify({"mensagem_telegram": "❌ Error: No valid links detected in the message."}), 400
 
-    print(f"\n[API] 🤖 A processar {len(links)} link(s) do Telegram...")
+    print(f"\n[API] 🤖 Processing {len(links)} link(s) from Telegram in BATCH...")
     
-    # Esta é a mensagem que o Python vai devolver ao Telegram!
-    relatorio = f"🤖 **Relatório do Robô**\nTotal: {len(links)} link(s)\n\n"
+    relatorio = f"🤖 **Bot Report**\nTotal processing: {len(links)} link(s)\n\n"
     
     for url in links:
-        url = url.strip() # Limpa espaços vazios
+        url = url.strip() 
         
-        if not url.startswith("http"): # Se não for um link a sério...
-            relatorio += f"❌ **Aviso:** O texto recebido não é um link válido.\n"
-            continue
+        if ".pt" in url or "leroymerlin.pt" in url or "obramat.pt" in url:
+            destino = "🇵🇹 Lisbon"
+        else:
+            destino = "🇮🇪 Dublin"
 
-        # 🛡️ PROTEÇÃO CONTRA DUPLICADOS (Lê o ficheiro processed_links.txt)
-        if os.path.exists("processed_links.txt"):
-            with open("processed_links.txt", "r", encoding="utf-8") as f:
+        # Verificação de duplicados usando o novo GPS da memória
+        if os.path.exists(LINKS_FILE):
+            with open(LINKS_FILE, "r", encoding="utf-8") as f:
                 if url in f.read():
-                    print("⚠️ Link já processado anteriormente. Saltando...")
-                    relatorio += "⚠️ **Duplicado:** Este link já está na tua base de dados.\n"
+                    print("⚠️ Link already processed previously. Skipping...")
+                    relatorio += f"⚠️ **Duplicate ({destino}):** This link is already in the database.\n"
                     continue
 
-# ⚙️ EXTRAÇÃO
         try:
+            # The extraction itself
             scraper.start_extraction(url)
             
-            # 🕵️‍♂️ O Dedo-Duro: Vamos ler o JSON que o scraper acabou de criar para ver o preço!
-            import json
             preco_zero = False
-            
-            # Procura o ficheiro data.json na pasta data
-            caminho_json = os.path.join(os.path.dirname(__file__), "data", "data.json")
-            if os.path.exists(caminho_json):
-                with open(caminho_json, "r", encoding="utf-8") as f:
-                    dados = json.load(f)
-                    # Verifica se o último produto adicionado tem preço 0.0
-                    for produto in dados.values():
-                        for entrada in produto.get("storeEntries", []):
-                            if entrada.get("price") == 0.0:
-                                preco_zero = True
+            caminho_data_dir = os.path.join(BASE_DIR, "data")
+            if os.path.exists(caminho_data_dir):
+                for nome_pasta in os.listdir(caminho_data_dir):
+                    pasta_produto = os.path.join(caminho_data_dir, nome_pasta)
+                    if os.path.isdir(pasta_produto):
+                        json_file = os.path.join(pasta_produto, "data.json")
+                        if os.path.exists(json_file):
+                            try:
+                                with open(json_file, "r", encoding="utf-8") as f:
+                                    produto_dados = json.load(f)
+                                    for entrada in produto_dados.get("storeEntries", []):
+                                        if entrada.get("link") == url and entrada.get("price") == 0.0:
+                                            preco_zero = True
+                            except: pass
             
             if preco_zero:
-                relatorio += "⚠️ **Atenção:** Produto extraído, MAS o preço não foi encontrado (está a €0.00). Verifica o link mais tarde!\n"
+                relatorio += f"⚠️ **Attention ({destino}):** Product extracted, BUT the price is €0.00. Please check!\n"
             else:
-                relatorio += "✅ **Sucesso:** Produto extraído com preço válido!\n"
+                relatorio += f"✅ **Success ({destino}):** Product extracted with a valid price!\n"
                 
         except Exception as e:
-            relatorio += f"❌ **Erro:** Falha ao extrair este link.\n"
+            relatorio += f"❌ **Error ({destino}):** Failed to extract this link.\n"
             
-    # Devolve a mensagem final montada para o n8n
     return jsonify({"mensagem_telegram": relatorio}), 200
 
 @app.route('/api/upload', methods=['POST'])
 def api_upload():
-    print("\n[API] 📤 Ordem de Upload recebida do n8n/Telegram!")
-    try:
-        uploader.start_upload()
-        return jsonify({"mensagem_telegram": "📤 **Upload Concluído!** Os produtos na fila foram enviados para a LisLock."}), 200
-    except Exception as e:
-        return jsonify({"mensagem_telegram": f"❌ **Erro no Upload:** {str(e)}"}), 500
+    print("\n[API] 📤 Upload command received from n8n/Telegram!")
+    
+    data = request.json or {}
+    chat_id = data.get('chat_id')
+    
+    def upload_em_segundo_plano(cid):
+        try:
+            print("⏳ Starting background upload...")
+            uploader.start_upload()
+            print("✅ Upload complete!")
+            mensagem_final = "✅ **SUCCESS:** The upload is complete and the products are now online!"
+        except Exception as e:
+            print(f"❌ Upload error: {e}")
+            mensagem_final = f"❌ **UPLOAD ERROR:** Failed to process the products. Detail: {e}"
+            
+        token = os.getenv("TELEGRAM_TOKEN")
+        if cid and token:
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            import requests
+            requests.post(url, json={"chat_id": cid, "text": mensagem_final, "parse_mode": "Markdown"})
 
+    thread = threading.Thread(target=upload_em_segundo_plano, args=(chat_id,))
+    thread.start()
+
+    mensagem_inicial = "⏳ **Processing upload...** I'll send a confirmation when it's done."
+    return jsonify({"mensagem_telegram": mensagem_inicial}), 200
+
+# === THE MAGIC HAPPENS HERE ===
 if __name__ == '__main__':
-    print("📡 Servidor da tua API Privada a correr na porta 5000...")
+    print("--- API Server Active on port 5000 ---")
     app.run(host='0.0.0.0', port=5000)
