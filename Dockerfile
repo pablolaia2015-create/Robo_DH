@@ -5,13 +5,13 @@ FROM python:3.10-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Instala o Google Chrome real e o Monitor Fantasma (Xvfb) para o Fato Mecânico
+# Instala o Google Chrome real, o Xvfb e as dependências atualizadas
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     xvfb \
     libxi6 \
-    libgconf-2-4 \
+    libgbm1 \
     && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
     && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list' \
     && apt-get update \
