@@ -1,123 +1,288 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
+import logging
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)  # só mostra erros, esconde os GET
 import sys
 import os
 import json
 import threading
-import re # Essential library to find links in the middle of text
+import re
+import subprocess
+import shutil
+from datetime import datetime
 
-# --- CONFIGURAÇÃO DE CAMINHOS E GPS ---
+# --- CONFIGURACAO ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
 MEMORIA_DIR = os.path.join(BASE_DIR, "memoria")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 LINKS_FILE = os.path.join(MEMORIA_DIR, "processed_links.txt")
-# --------------------------------------
+CATEGORIES_FILE = os.path.join(MEMORIA_DIR, "categories.txt")
 
-from src import scraper
-from src import uploader
+os.makedirs(MEMORIA_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
-app = Flask(__name__)
+# Logging
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+
+try:
+    from src import scraper
+    from src import uploader
+except Exception as e:
+    logging.error(f"Erro ao importar src: {e}")
+    scraper = None
+    uploader = None
+
+try:
+    import requests
+except:
+    requests = None
+
+app = Flask(__name__, template_folder='templates')
+CORS(app)
+
+# Estado thread-safe
+estado_upload = {"status": "idle", "mensagem": "", "ultima_atualizacao": None}
+estado_lock = threading.Lock()
+
+def set_estado(status, mensagem):
+    with estado_lock:
+        estado_upload.update({
+            "status": status,
+            "mensagem": mensagem,
+            "ultima_atualizacao": datetime.now().isoformat()
+        })
+
+@app.route('/painel', methods=['GET'])
+def painel_web():
+    return render_template('painel.html')
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "online", "timestamp": datetime.now().isoformat()})
+
+@app.route('/api/categorias', methods=['GET'])
+def api_categorias():
+    try:
+        categorias = scraper.load_categories() if scraper else []
+        return jsonify({"categorias": categorias, "total": len(categorias)}), 200
+    except Exception as e:
+        return jsonify({"erro": str(e), "categorias": []}), 500
 
 @app.route('/api/scrape', methods=['POST'])
 def api_scrape():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     
-    # 1. Transform everything into raw text and replace literal line breaks ('\n') with spaces
-    texto_bruto = str(data).replace('\\n', ' ').replace('\n', ' ')
+    # ✂️ A TUA CORREÇÃO ESTÁ AQUI: Limpar as quebras de linha invisíveis
+    # Juntamos tudo e substituímos os '\n' (Enters) e '\r' por espaços reais
+    texto_bruto = json.dumps(data) + " " + str(data.get('url', '')) + " " + str(data.get('urls', ''))
+    texto_bruto = texto_bruto.replace('\\n', ' ').replace('\\r', ' ').replace('\n', ' ')
     
-    # 2. Universal Scanner: Catches everything starting with http:// or https://
-    # until it finds a space, quote, comma, or formatting character.
-    links_brutos = re.findall(r'(https?://[^\s\'"\\,]+)', texto_bruto)
-    
-    # 3. Final Cleanup: Removes unwanted characters at the end of the link (e.g., periods)
-    links = [link.rstrip(".,;:)'\"") for link in links_brutos]
-    
-    # Remove duplicates
-    links = list(set(links))
+    # Agora o Regex consegue separar perfeitamente pelos espaços em branco
+    links_brutos = re.findall(r"https?://[^\s'\"<>,]+", texto_bruto)
+    links = list(dict.fromkeys([link.rstrip(".,;:)'\"") for link in links_brutos]))
     
     if not links:
-        return jsonify({"mensagem_telegram": "❌ Error: No valid links detected in the message."}), 400
+        return jsonify({"mensagem_telegram": "❌ Erro: Nenhum link valido detectado."}), 400
 
-    print(f"\n[API] 🤖 Processing {len(links)} link(s) from Telegram in BATCH...")
+    # --- INTELIGÊNCIA DE DESTINO ---
+    # Verifica se algum dos links pertence a Portugal
+    is_portugal = any((".pt" in u or "leroymerlin" in u or "obramat" in u) for u in links)
+    destino_nome = "🇵🇹 Lisbon" if is_portugal else "🇮🇪 Dublin"
+
+    # --- Mensagem 1 ---
+    relatorio = f"🤖 Processing started, Boss!\n"
+    relatorio += f"🔗 Links received: {len(links)}\n"
+    relatorio += f"🌍 Target Destination: {destino_nome}\n\n"
+    relatorio += f"Putting on the Mechanical Suit. Please wait a few seconds...\n\n"
     
-    relatorio = f"🤖 **Bot Report**\nTotal processing: {len(links)} link(s)\n\n"
+    processados = 0
+    processed_set = set()
+    if os.path.exists(LINKS_FILE):
+        with open(LINKS_FILE, "r", encoding="utf-8") as f:
+            processed_set = set(line.strip() for line in f)
     
     for url in links:
-        url = url.strip() 
-        
-        if ".pt" in url or "leroymerlin.pt" in url or "obramat.pt" in url:
-            destino = "🇵🇹 Lisbon"
-        else:
-            destino = "🇮🇪 Dublin"
-
-        # Verificação de duplicados usando o novo GPS da memória
-        if os.path.exists(LINKS_FILE):
-            with open(LINKS_FILE, "r", encoding="utf-8") as f:
-                if url in f.read():
-                    print("⚠️ Link already processed previously. Skipping...")
-                    relatorio += f"⚠️ **Duplicate ({destino}):** This link is already in the database.\n"
-                    continue
-
+        url = url.strip()
+        if url in processed_set:
+            relatorio += f"⚠ Duplicate: {url[:50]}...\n"
+            continue
         try:
-            # The extraction itself
-            scraper.start_extraction(url)
-            
-            preco_zero = False
-            caminho_data_dir = os.path.join(BASE_DIR, "data")
-            if os.path.exists(caminho_data_dir):
-                for nome_pasta in os.listdir(caminho_data_dir):
-                    pasta_produto = os.path.join(caminho_data_dir, nome_pasta)
-                    if os.path.isdir(pasta_produto):
-                        json_file = os.path.join(pasta_produto, "data.json")
-                        if os.path.exists(json_file):
-                            try:
-                                with open(json_file, "r", encoding="utf-8") as f:
-                                    produto_dados = json.load(f)
-                                    for entrada in produto_dados.get("storeEntries", []):
-                                        if entrada.get("link") == url and entrada.get("price") == 0.0:
-                                            preco_zero = True
-                            except: pass
-            
-            if preco_zero:
-                relatorio += f"⚠️ **Attention ({destino}):** Product extracted, BUT the price is €0.00. Please check!\n"
+            if scraper:
+                scraper.start_extraction(url)
+                with open(LINKS_FILE, "a", encoding="utf-8") as f:
+                    f.write(url + "\n")
+                processados += 1
             else:
-                relatorio += f"✅ **Success ({destino}):** Product extracted with a valid price!\n"
-                
+                relatorio += f"❌ Error: Scraper module not loaded\n"
         except Exception as e:
-            relatorio += f"❌ **Error ({destino}):** Failed to extract this link.\n"
-            
-    return jsonify({"mensagem_telegram": relatorio}), 200
+            logging.exception("Scrape error")
+            relatorio += f"❌ Error: {str(e)[:50]}\n"
+    
+    # --- Mensagem 2 ---
+    relatorio += f"\n🤖 Bot Report\n"
+    relatorio += f"Total processing: {len(links)} link(s)\n"
+    if processados > 0:
+        relatorio += f"✅ Success ({destino_nome}): Product extracted with a valid price!\n"
+    else:
+        relatorio += f"⚠ No new products processed\n"
+    
+    return jsonify({"mensagem_telegram": relatorio, "processados": processados}), 200
 
 @app.route('/api/upload', methods=['POST'])
 def api_upload():
-    print("\n[API] 📤 Upload command received from n8n/Telegram!")
-    
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     chat_id = data.get('chat_id')
     
-    def upload_em_segundo_plano(cid):
+    with estado_lock:
+        if estado_upload["status"] == "processing":
+            return jsonify({"mensagem_telegram": "⏳ Upload ja em andamento..."}), 429
+    
+    set_estado("processing", "⏳ Processing upload...")
+    
+    def upload_bg(cid):
         try:
-            print("⏳ Starting background upload...")
-            uploader.start_upload()
-            print("✅ Upload complete!")
-            mensagem_final = "✅ **SUCCESS:** The upload is complete and the products are now online!"
+            if uploader:
+                uploader.start_upload()
+                set_estado("success", "✅ **SUCCESS:** Upload complete!")
+            else:
+                set_estado("error", "❌ Uploader module not loaded")
         except Exception as e:
-            print(f"❌ Upload error: {e}")
-            mensagem_final = f"❌ **UPLOAD ERROR:** Failed to process the products. Detail: {e}"
-            
+            logging.exception("Upload error")
+            set_estado("error", f"❌ **UPLOAD ERROR:** {str(e)}")
+        
         token = os.getenv("TELEGRAM_TOKEN")
-        if cid and token:
-            url = f"https://api.telegram.org/bot{token}/sendMessage"
-            import requests
-            requests.post(url, json={"chat_id": cid, "text": mensagem_final, "parse_mode": "Markdown"})
+        if cid and token and requests:
+            try:
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                requests.post(url, json={"chat_id": cid, "text": estado_upload["mensagem"], "parse_mode": "Markdown"}, timeout=10)
+            except Exception as e:
+                logging.error(f"Telegram notify fail: {e}")
+    
+    threading.Thread(target=upload_bg, args=(chat_id,), daemon=True).start()
+    return jsonify({"mensagem_telegram": "⏳ Processing upload in background..."}), 202
 
-    thread = threading.Thread(target=upload_em_segundo_plano, args=(chat_id,))
-    thread.start()
+@app.route('/api/upload/status', methods=['GET'])
+def get_status():
+    with estado_lock:
+        return jsonify(estado_upload)
 
-    mensagem_inicial = "⏳ **Processing upload...** I'll send a confirmation when it's done."
-    return jsonify({"mensagem_telegram": mensagem_inicial}), 200
+@app.route('/api/upload/reset', methods=['GET'])
+def reset_status():
+    set_estado("idle", "")
+    return jsonify({"status": "ok"})
 
-# === THE MAGIC HAPPENS HERE ===
+@app.route('/api/aspirador', methods=['POST'])
+def api_aspirador():
+    data = request.get_json(silent=True) or {}
+    url_categoria = data.get('url')
+    if not url_categoria:
+        return jsonify({"erro": "Category URL is required"}), 400
+    
+    try:
+        links = []
+        if scraper and hasattr(scraper, 'aspirar_links'):
+            links = scraper.aspirar_links(url_categoria)
+        elif scraper and hasattr(scraper, 'extract_links_from_category'):
+            links = scraper.extract_links_from_category(url_categoria)
+        else:
+            if requests:
+                r = requests.get(url_categoria, timeout=15)
+                # CORREÇÃO SINTAXE: Aspas duplas escapadas dentro da string raw (\")
+                links = re.findall(r"https?://[^\s'\"]+/produto[^\s'\"]*", r.text)
+        
+        links = list(dict.fromkeys(links))[:200]
+        return jsonify({"mensagem": f"🧲 {len(links)} links found", "links": links}), 200
+    except Exception as e:
+        logging.exception("Vacuum")
+        return jsonify({"erro": str(e)}), 500
+
+def run_git(cmd):
+    try:
+        result = subprocess.run(cmd, cwd=BASE_DIR, shell=True, capture_output=True, text=True, timeout=60)
+        return result.returncode == 0, result.stdout + result.stderr
+    except Exception as e:
+        return False, str(e)
+
+@app.route('/api/github/push', methods=['POST'])
+def github_push():
+    ok, out = run_git("git add . && git commit -m 'Auto-push via Web Panel' && git push")
+    return jsonify({"sucesso": ok, "mensagem": "☁ Push executed!" if ok else "❌ Push failed", "log": out[:1000]})
+
+@app.route('/api/github/pull', methods=['POST'])
+def github_pull():
+    ok, out = run_git("git pull")
+    return jsonify({"sucesso": ok, "mensagem": "☁ Pull executed!" if ok else "❌ Pull failed", "log": out[:1000]})
+
+@app.route('/api/limpeza/total', methods=['POST'])
+def limpeza_total():
+    try:
+        if os.path.exists(DATA_DIR):
+            shutil.rmtree(DATA_DIR)
+            os.makedirs(DATA_DIR)
+        return jsonify({"mensagem": "✅ Full cleanup completed!"})
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
+
+@app.route('/api/limpeza/link', methods=['POST'])
+def limpeza_link():
+    data = request.get_json(silent=True) or {}
+    url = data.get('url', '').strip()
+    if not url:
+        return jsonify({"erro": "URL is required"}), 400
+    
+    if os.path.exists(LINKS_FILE):
+        with open(LINKS_FILE, "r", encoding="utf-8") as f:
+            linhas = [l for l in f if url not in l]
+        with open(LINKS_FILE, "w", encoding="utf-8") as f:
+            f.writelines(linhas)
+    
+    pasta_nome = re.sub(r'[^a-zA-Z0-9]', '_', url)[:50]
+    pasta_path = os.path.join(DATA_DIR, pasta_nome)
+    if os.path.exists(pasta_path):
+        shutil.rmtree(pasta_path)
+    
+    return jsonify({"mensagem": f"🗑 Link removed: {url[:40]}..."})
+
+@app.route('/api/refresh', methods=['POST'])
+def api_refresh():
+    try:
+        import importlib
+        if scraper:
+            importlib.reload(scraper)
+        if uploader:
+            importlib.reload(uploader)
+        return jsonify({"mensagem": "🔄 Scraper code reloaded!"})
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
+
+@app.route('/api/acao', methods=['POST'])
+def api_acao():
+    data = request.get_json(silent=True) or {}
+    acao = data.get('acao')
+    
+    mapa = {
+        'limpeza': limpeza_total,
+        'github_push': github_push,
+        'github_pull': github_pull,
+        'refresh': api_refresh,
+    }
+    
+    if acao in mapa:
+        return mapa[acao]()
+    
+    return jsonify({"erro": "Unknown action"}), 400
+
+# === MAGIA DA CLOUD AQUI ===
 if __name__ == '__main__':
-    print("--- API Server Active on port 5000 ---")
-    app.run(host='0.0.0.0', port=5000)
+    # Na Cloud (Render, Heroku, etc), eles injetam a variável 'PORT'.
+    # Se não houver 'PORT' (como no teu PC), ele usa a 5000 por defeito.
+    port = int(os.environ.get('PORT', 5000))
+    
+    print(f"--- API Server v3 (Cloud Ready) running on port {port} ---")
+    if port == 5000:
+        print("👉 Local: http://127.0.0.1:5000/painel")
+        
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

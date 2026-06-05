@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - DH Robot | Dubliner Handyman</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .dh-blue { background-color: #0d5c7d; }
+        .dh-blue-hover:hover { background-color: #0a4a65; }
+        .dh-green { background-color: #0a7a4a; }
+        .card { box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04); }
+    </style>
+</head>
+<body class="bg-[#f6f8fb] text-gray-800 min-h-screen">
+
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div class="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-[#0d5c7d] rounded-md flex items-center justify-center">
+                    <i class="fa-solid fa-screwdriver-wrench text-white text-sm"></i>
+                </div>
+                <span class="font-semibold text-[#0d3b4f] text-[17px]">Dubliner Handyman</span>
+            </div>
+            <nav class="hidden md:flex items-center gap-6 text-[14px] text-[#0d5c7d] font-medium">
+                <a href="#" class="hover:underline">Home</a>
+                <a href="#" class="hover:underline">Store</a>
+                <a href="#" class="hover:underline">Services</a>
+                <a href="#" class="hover:underline">Contact</a>
+                <i class="fa-solid fa-cart-shopping ml-2"></i>
+                <button class="dh-blue text-white px-4 py-1.5 rounded-md text-[13px] font-semibold dh-blue-hover">Book a Repair</button>
+                <button class="dh-green text-white px-4 py-1.5 rounded-md text-[13px] font-semibold">Access My Bookings</button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-[1400px] mx-auto px-6 py-6">
+        <div class="flex items-center justify-between mb-6">
+            <h1 class="text-[22px] font-semibold text-gray-800">Admin</h1>
+            <button class="bg-white border border-gray-200 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50">
+                <i class="fa-solid fa-shuffle mr-1"></i> Switch Domain
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div class="xl:col-span-2 space-y-5">
+                <div class="bg-white rounded-[20px] border border-gray-200 card p-6">
+                    <div class="flex items-center gap-2 mb-5">
+                        <div class="w-8 h-8 bg-[#0d3b4f] rounded-lg flex items-center justify-center">
+                            <i class="fa-solid fa-robot text-white text-sm"></i>
+                        </div>
+                        <h2 class="text-[18px] font-semibold text-[#0d3b4f]">Central Panel - DH Robot</h2>
+                        <span class="ml-auto bg-green-100 text-green-700 px-2.5 py-1 rounded-full text-[11px] font-semibold">ONLINE</span>
+                    </div>
+
+                    <div class="mb-5">
+                        <label class="text-[12px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">1. Single / Batch Scraper</label>
+                        <textarea id="linksInput" rows="3" class="w-full bg-[#f9fafb] border border-gray-200 rounded-xl p-3 text-[14px] focus:outline-none focus:ring-2 focus:ring-[#0d5c7d]/20 focus:border-[#0d5c7d]" placeholder="https://www.woodies.ie/product-1&#10;https://www.woodies.ie/product-2"></textarea>
+                        <button onclick="enviarScrape()" class="mt-3 w-full dh-blue dh-blue-hover text-white font-semibold py-2.5 rounded-xl text-[14px] transition">
+                            <i class="fa-solid fa-bolt mr-2"></i> Start Extraction
+                        </button>
+                    </div>
+
+                    <div class="mb-5">
+                        <label class="text-[12px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">2. Upload to Website</label>
+                        <button onclick="enviarUpload()" class="w-full bg-[#0a7a4a] hover:bg-[#08623c] text-white font-semibold py-3 rounded-xl text-[14px] transition">
+                            <i class="fa-solid fa-cloud-arrow-up mr-2"></i> Upload Now
+                        </button>
+                    </div>
+
+                    <div>
+                        <label class="text-[12px] font-semibold text-gray-500 uppercase tracking-wider mb-3 block">3. System Actions</label>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <button onclick="verCategorias()" class="bg-white border border-gray-200 hover:bg-gray-50 rounded-xl p-4 flex flex-col items-center gap-2 transition card">
+                                <i class="fa-solid fa-tags text-[#7c3aed] text-xl"></i>
+                                <span class="text-[12px] font-medium text-gray-700">View Categories</span>
+                            </button>
+                            <button onclick="aspiradorLinks()" class="bg-white border border-gray-200 hover:bg-gray-50 rounded-xl p-4 flex flex-col items-center gap-2 transition card">
+                                <i class="fa-solid fa-magnet text-[#dc2626] text-xl"></i>
+                                <span class="text-[12px] font-medium text-gray-700">Link Vacuum</span>
+                            </button>
+                            <button onclick="githubPush()" class="bg-white border border-gray-200 hover:bg-gray-50 rounded-xl p-4 flex flex-col items-center gap-2 transition card">
+                                <i class="fa-solid fa-cloud-arrow-up text-[#0d5c7d] text-xl"></i>
+                                <span class="text-[12px] font-medium text-gray-700">Cloud Push</span>
+                            </button>
+                            <button onclick="githubPull()" class="bg-white border border-gray-200 hover:bg-gray-50 rounded-xl p-4 flex flex-col items-center gap-2 transition card">
+                                <i class="fa-solid fa-cloud-arrow-down text-[#0d5c7d] text-xl"></i>
+                                <span class="text-[12px] font-medium text-gray-700">Cloud Pull</span>
+                            </button>
+                            <button onclick="limpezaTotal()" class="bg-white border border-gray-200 hover:bg-gray-50 rounded-xl p-4 flex flex-col items-center gap-2 transition card">
+                                <i class="fa-solid fa-trash-can text-gray-600 text-xl"></i>
+                                <span class="text-[12px] font-medium text-gray-700">Full Cleanup</span>
+                            </button>
+                            <button onclick="apagarLink()" class="bg-white border border-gray-200 hover:bg-gray-50 rounded-xl p-4 flex flex-col items-center gap-2 transition card">
+                                <i class="fa-solid fa-link-slash text-orange-600 text-xl"></i>
+                                <span class="text-[12px] font-medium text-gray-700">Delete Link</span>
+                            </button>
+                            <button onclick="refreshCode()" class="bg-white border border-gray-200 hover:bg-gray-50 rounded-xl p-4 flex flex-col items-center gap-2 transition card">
+                                <i class="fa-solid fa-rotate text-[#0d5c7d] text-xl"></i>
+                                <span class="text-[12px] font-medium text-gray-700">Refresh</span>
+                            </button>
+                            <button onclick="ligarAPI()" class="bg-white border border-gray-200 hover:bg-gray-50 rounded-xl p-4 flex flex-col items-center gap-2 transition card">
+                                <i class="fa-solid fa-signal text-green-600 text-xl"></i>
+                                <span class="text-[12px] font-medium text-gray-700">API Status</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="xl:col-span-1">
+                <div class="bg-white rounded-[20px] border border-gray-200 card p-5 h-full flex flex-col">
+                    <div class="flex items-center gap-2 mb-4">
+                        <i class="fa-solid fa-terminal text-gray-500"></i>
+                        <h3 class="font-semibold text-gray-700 text-[15px]">Robot Monitor</h3>
+                        <button onclick="limparMonitor()" class="ml-auto text-[11px] text-gray-500 hover:text-gray-700">Clear</button>
+                    </div>
+                    <div id="terminalOutput" class="flex-grow bg-[#f9fafb] border border-gray-100 rounded-xl p-4 font-mono text-[12px] leading-5 overflow-y-auto" style="max-height: 560px; min-height: 460px; white-space: pre-wrap;">
+<span class="text-gray-400">Waiting for commands...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = '';
+
+        function adicionarLog(mensagem, tipo = 'info') {
+            const terminal = document.getElementById('terminalOutput');
+            const hora = new Date().toLocaleTimeString('en-GB');
+            const cores = {
+                info: 'text-gray-700',
+                success: 'text-green-600',
+                error: 'text-red-600',
+                warn: 'text-amber-600',
+                blue: 'text-[#0d5c7d]'
+            };
+            const cor = cores[tipo] || cores.info;
+            terminal.innerHTML += `\n<span class="text-gray-400">[${hora}]</span> <span class="${cor}">${mensagem}</span>`;
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function limparMonitor() {
+            document.getElementById('terminalOutput').innerHTML = '<span class="text-gray-400">Monitor cleared.</span>';
+        }
+
+        setInterval(async () => {
+            try {
+                const r = await fetch(`${API_BASE}/api/upload/status`);
+                const data = await r.json();
+                if (data.status === 'success' || data.status === 'error' || data.status === 'sucesso' || data.status === 'erro') {
+                    adicionarLog(data.mensagem, data.status.includes('succ') ? 'success' : 'error');
+                    fetch(`${API_BASE}/api/upload/reset`);
+                }
+            } catch(e) {}
+        }, 4000);
+
+        async function enviarScrape() {
+            const links = document.getElementById('linksInput').value;
+            if (!links.trim()) { alert('Paste at least one link!'); return; }
+            adicionarLog('Sending extraction...', 'blue');
+            document.getElementById('linksInput').value = '';
+            try {
+                const r = await fetch(`${API_BASE}/api/scrape`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ text: links, urls: links })
+                });
+                const data = await r.json();
+                adicionarLog(data.mensagem_telegram || 'Processed', 'info');
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function enviarUpload() {
+            adicionarLog('Starting background upload...', 'warn');
+            try {
+                const r = await fetch(`${API_BASE}/api/upload`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+                const data = await r.json();
+                adicionarLog(data.mensagem_telegram, 'blue');
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function verCategorias() {
+            try {
+                const r = await fetch(`${API_BASE}/api/categorias`);
+                const data = await r.json();
+                adicionarLog(`📚 ${data.total || data.categorias.length} categories learned:`, 'blue');
+                data.categorias.slice(0,20).forEach(c => adicionarLog(' • ' + c, 'info'));
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function githubPush() {
+            adicionarLog('☁ Pushing to GitHub...', 'blue');
+            try {
+                const r = await fetch(`${API_BASE}/api/github/push`, {method: 'POST'});
+                const data = await r.json();
+                adicionarLog(data.mensagem, data.sucesso? 'success' : 'error');
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function githubPull() {
+            adicionarLog('☁ Pulling from GitHub...', 'blue');
+            try {
+                const r = await fetch(`${API_BASE}/api/github/pull`, {method: 'POST'});
+                const data = await r.json();
+                adicionarLog(data.mensagem, data.sucesso? 'success' : 'error');
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function limpezaTotal() {
+            if (!confirm('Delete the entire data folder?')) return;
+            adicionarLog('🗑 Cleaning...', 'warn');
+            try {
+                const r = await fetch(`${API_BASE}/api/limpeza/total`, {method: 'POST'});
+                const data = await r.json();
+                adicionarLog(data.mensagem, 'success');
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function apagarLink() {
+            const url = prompt('URL to delete:');
+            if (!url) return;
+            try {
+                const r = await fetch(`${API_BASE}/api/limpeza/link`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url})
+                });
+                const data = await r.json();
+                adicionarLog(data.mensagem, 'success');
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function refreshCode() {
+            adicionarLog('🔄 Reloading scraper...', 'blue');
+            try {
+                const r = await fetch(`${API_BASE}/api/refresh`, {method: 'POST'});
+                const data = await r.json();
+                adicionarLog(data.mensagem, 'success');
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function aspiradorLinks() {
+            const url = prompt('Category URL to vacuum:');
+            if (!url) return;
+            adicionarLog('🧲 Vacuuming links...', 'blue');
+            try {
+                const r = await fetch(`${API_BASE}/api/aspirador`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url})
+                });
+                const data = await r.json();
+                adicionarLog(data.mensagem || `${data.links?.length} links`, 'success');
+                if (data.links) {
+                    document.getElementById('linksInput').value = data.links.join('\n');
+                    adicionarLog('Links pasted into scraper. Click Start Extraction.', 'info');
+                }
+            } catch(e) { adicionarLog('Error: ' + e.message, 'error'); }
+        }
+
+        async function ligarAPI() {
+            try {
+                const r = await fetch(`${API_BASE}/health`);
+                const data = await r.json();
+                adicionarLog(`🌐 API ${data.status.toUpperCase()} - ${data.timestamp}`, 'success');
+            } catch(e) { adicionarLog('API offline', 'error'); }
+        }
+
+        adicionarLog('DH Panel loaded. Ready.', 'success');
+    </script>
+</body>
+</html>

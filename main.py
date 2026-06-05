@@ -1,6 +1,6 @@
 import os, sys, time, shutil, importlib
 import cloudscraper
-import undetected_chromedriver as uc
+import undetected_chromedriver as uc # <-- ADICIONADO (Faltava isto para o Aspirador funcionar!)
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -32,7 +32,7 @@ def print_header():
     print(" 🌟 VERSION V28.4 SUPER PRO (GPS + API INTEGRADA)")
     print("═"*50 + "\n")
 
-# --- NOVA FUNÇÃO: O ASPIRADOR DE CATEGORIAS TURBINADO (FATO MECÂNICO) ---
+# --- O ASPIRADOR DE CATEGORIAS TURBINADO (FATO MECÂNICO) ---
 def extrair_links_da_categoria(url_categoria):
     print("\n⏳ A ligar o 'Aspirador Turbinado' (Fato Mecânico)...")
     print("💡 Ele vai abrir o Chrome sozinho para garantir que carrega todos os produtos escondidos!")
@@ -86,9 +86,9 @@ def extrair_links_da_categoria(url_categoria):
                 for link in links_encontrados:
                     f.write(link + "\n")
             print(f"\n✅ SUCESSO ABSOLUTO! {len(links_encontrados)} links de produtos guardados no ficheiro 'links_em_lote.txt'.")
-            print("💡 Dica: Agora abre o ficheiro, copia os links e manda para o Telegram!")
+            print("💡 Dica: Agora abre o ficheiro, copia os links e manda para o Telegram ou usa a Opção 2!")
         else:
-            print("\n⚠️ A página carregou, fiz scroll, mas não encontrei links com a estrutura de produto.")
+            print("\n⚠️ A página carregou, fiz scroll, mas não encontrei links com a estrutura de produto definida.")
             
     except Exception as e:
         print(f"\n❌ Ocorreu um erro no Aspirador: {e}")
@@ -110,7 +110,7 @@ def menu_principal():
         print("  [ 7 ] 🗑️  APAGAR LINK E PASTA (Limpeza Total)")
         print("  [ 8 ] 🔄 REFRESH (Recarregar Código do Scraper)")
         print("  [ 9 ] 🧲 ASPIRADOR DE LINKS (Extrair de uma Categoria)")
-        print("  [ 10] 🌐 LIGAR SERVIDOR API (Receber do Telegram)")
+        print("  [ 10] 🌐 LIGAR SERVIDOR API (Receber do Telegram/Painel Web)")
         print("  [ 0 ] 👋 SAIR")
         print("-" * 50)
 
@@ -196,8 +196,8 @@ def menu_principal():
 
         elif escolha == "7":
             print("\n" + "🗑️"*20)
-            print("MODO APAGAR LINK DA MEMÓRIA")
-            link_to_delete = input("🔗 COLE O LINK QUE DESEJA APAGAR: ").strip()
+            print("MODO APAGAR LINK DA MEMÓRIA E LIMPAR PASTA")
+            link_to_delete = input("🔗 COLE O LINK QUE DESEJA APAGAR (Ou deixe vazio para ignorar): ").strip()
             
             if link_to_delete and os.path.exists(LINKS_FILE):
                 with open(LINKS_FILE, "r", encoding="utf-8") as f:
@@ -213,24 +213,22 @@ def menu_principal():
                 
                 if apagado:
                     print("✅ Link apagado com sucesso do ficheiro de memória.")
-                    
-                    limpar_pasta = input("⚠️ Queres apagar TODOS os produtos na pasta 'data' para recomeçar limpo? (s/n): ").strip().lower()
-                    
-                    if limpar_pasta == 's':
-                        pasta_data = os.path.join(BASE_DIR, "data")
-                        if os.path.exists(pasta_data):
-                            shutil.rmtree(pasta_data) 
-                            os.makedirs(pasta_data)
-                            print("🧹 Pasta 'data' limpa com sucesso! O robô está pronto para um novo começo.")
-                        else:
-                            print("A pasta 'data' não foi encontrada.")
-                    else:
-                        print("A pasta 'data' não foi alterada.")
-                        print("⚠️ Não te esqueças de apagar manualmente a pasta do produto que estás a testar para evitar conflitos!")
                 else:
                     print("⚠️ O link não foi encontrado na memória.")
+            
+            limpar_pasta = input("\n⚠️ Queres apagar TODOS os produtos na pasta 'data' para recomeçar limpo? (s/n): ").strip().lower()
+            if limpar_pasta == 's':
+                pasta_data = os.path.join(BASE_DIR, "data")
+                if os.path.exists(pasta_data):
+                    shutil.rmtree(pasta_data) 
+                    os.makedirs(pasta_data)
+                    print("🧹 Pasta 'data' limpa com sucesso! O robô está pronto para um novo começo.")
+                else:
+                    print("A pasta 'data' não foi encontrada.")
             else:
-                print("❌ Erro: Link vazio ou ficheiro de memória não existe.")
+                print("A pasta 'data' não foi alterada.")
+                print("⚠️ Não te esqueças de apagar manualmente a pasta do produto que estás a testar para evitar conflitos no upload!")
+                
             input("\n🔙 Pressione ENTER para voltar ao menu...")
             
         elif escolha == "8":
@@ -253,11 +251,10 @@ def menu_principal():
                 print("❌ Link inválido ou vazio.")
             input("\n🔙 Pressione ENTER para voltar ao menu...")
 
-        # --- A NOVA OPÇÃO 10: LIGAR SERVIDOR API ---
         elif escolha == "10":
             print("\n" + "🌐"*20)
             print("A iniciar o Servidor API...")
-            print("⚠️ ATENÇÃO: O menu ficará pausado enquanto o servidor estiver a ouvir o Telegram.")
+            print("⚠️ ATENÇÃO: O menu ficará pausado enquanto o servidor estiver a ouvir a Web.")
             print("🛑 Para desligar o servidor e voltar a este menu, pressiona [ CTRL + C ]")
             print("-" * 50)
             try:

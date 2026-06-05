@@ -1,11 +1,14 @@
-# Usa uma base oficial do Python super leve
+# 1. SISTEMA OPERATIVO: Usa uma base oficial do Python super leve
 FROM python:3.10-slim
 
-# Impede que o Python crie ficheiros temporários inúteis
+# 2. CONFIGURAÇÕES GERAIS
+# Impede que o Python crie ficheiros temporários inúteis (.pyc)
 ENV PYTHONDONTWRITEBYTECODE=1
+# Força os logs a aparecerem imediatamente no painel do Google Cloud (sem atrasos)
 ENV PYTHONUNBUFFERED=1
 
-# Instala o Google Chrome real e o Xvfb (MÉTODO MODERNO SEM APT-KEY)
+# 3. INSTALAÇÃO DO CHROME E DO "ECRÃ INVISÍVEL" (Xvfb)
+# O Google Cloud não tem monitor. O Xvfb simula um ecrã para o Fato Mecânico não quebrar.
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -18,18 +21,21 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Cria a pasta de trabalho dentro da caixa
+# 4. PASTA DE TRABALHO: Cria a pasta principal dentro da nossa "caixa"
 WORKDIR /app
 
-# Copia a lista de compras e instala
+# 5. DEPENDÊNCIAS: Copia a lista de compras e instala tudo
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia o resto do teu robô para dentro da caixa
+# 6. CÓDIGO FONTE: Copia o resto do teu robô para dentro da caixa
 COPY . .
 
-# Abre a porta 5000 para o n8n poder falar com ele
+# 7. PORTA DE COMUNICAÇÃO
+# Expor a porta 5000 é útil para testes locais. No Google Cloud, o servidor irá ignorar isto 
+# e injetar a sua própria porta dinamicamente no api_server.py.
 EXPOSE 5000
 
-# O Motor de Arranque: Liga o ecrã invisível e arranca o servidor API
+# 8. O MOTOR DE ARRANQUE
+# Liga o ecrã invisível (Xvfb) na porta :99 com resolução 1920x1080, e arranca o servidor API
 CMD ["sh", "-c", "Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99 && python api_server.py"]
