@@ -277,12 +277,12 @@ def api_acao():
 
 # === MAGIA DA CLOUD AQUI ===
 if __name__ == '__main__':
-    # Na Cloud (Render, Heroku, etc), eles injetam a variável 'PORT'.
-    # Se não houver 'PORT' (como no teu PC), ele usa a 5000 por defeito.
-    port = int(os.environ.get('PORT', 5000))
+    # O Google Cloud Run injeta a porta na variável de ambiente 'PORT'
+    # Se não houver, assume 8080.
+    port = int(os.environ.get('PORT', 8080))
     
-    print(f"--- API Server v3 (Cloud Ready) running on port {port} ---")
-    if port == 5000:
-        print("👉 Local: http://127.0.0.1:5000/painel")
-        
+    print(f"--- API Server rodando na porta {port} ---")
+    
+    # Adicionamos debug=False e usamos o servidor de produção do Flask
+    # O threaded=True é importante para não travar o processo
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
